@@ -21,7 +21,7 @@ backburn [COMMAND] [OPTIONS] [PATH]
 | `gems` | Which Gemfile gems does the app still need? | `--gem-src DIR` |
 | `init` | Write a starting config for this project | `--force` |
 
-**`scan`** is today's report: every candidate with its reason, test tag and dead callers, plus the dynamic dispatch sites that could hide callers. `--only` takes a comma list of `unreferenced`, `dead-chain`, `dead-cycle`. `--test-refs exclude` drops candidates that tests name; `--test-refs only` shows just those.
+**`scan`** is today's report: every candidate with its reason, test tag and dead callers, then the uncertain definitions (what a computed `send` on self may call, never counted as candidates), then the dynamic dispatch sites that could hide callers. `--only` takes a comma list of `unreferenced`, `dead-chain`, `dead-cycle`. `--test-refs exclude` drops candidates that tests name; `--test-refs only` shows just those.
 
 **`batches`** is today's `--batches`: dead code joined by references or containment, ordered untested first, then largest. Each batch lists its lines, files and the test files that name it.
 
@@ -106,6 +106,9 @@ Unreferenced (29)
   app/models/print_queue/hold.rb:9      class   PrintQueue::Hold  [tests]
   …
 
+Uncertain: a computed send may reach these (1)
+  lib/dispatcher.rb:6                   method  Dispatcher#start  ← send(<computed>) lib/dispatcher.rb:3
+
 Dynamic dispatch that may hide callers (11)
   app/models/gcode/slicer.rb:33         constantize(<computed>)
 ```
@@ -148,13 +151,24 @@ For tools such as connascent and editors. One object; `schema` bumps on breaking
   "batches": [
     { "id": 1, "lines": 6, "files": ["app/models/order.rb"], "definitions": ["method:Order#legacy_total", "method:Order#old_rounding"], "test_files": [] }
   ],
+  "uncertain": [
+    {
+      "id": "method:Dispatcher#start",
+      "kind": "method",
+      "name": "Dispatcher#start",
+      "location": { "file": "lib/dispatcher.rb", "line": 6, "end_line": 6 },
+      "visibility": "public",
+      "tests": false,
+      "send": { "file": "lib/dispatcher.rb", "line": 3, "call": "send" }
+    }
+  ],
   "dynamic_sites": [
     { "file": "app/models/gcode/slicer.rb", "line": 33, "call": "constantize" }
   ]
 }
 ```
 
-`scan` and `batches` print this same document; `batches` is always filled in, so one JSON run serves both. `explain` prints `{ "id", "live", "reason", "path": [{ "id", "via", "location" }] }`.
+`scan` and `batches` print this same document; `batches` is always filled in, so one JSON run serves both. `uncertain` lists definitions a computed send on self may reach, each with that send; they are never candidates. `explain` prints `{ "id", "live", "reason", "path": [{ "id", "via", "location" }] }`. For an uncertain definition, `live` is `false`, `reason` is `"uncertain"`, and the path step through the send has `"via": "send"` with the send's location.
 
 ### sarif
 

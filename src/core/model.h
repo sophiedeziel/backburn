@@ -6,8 +6,11 @@
 
 enum { K_LOAD, K_METHOD, K_SMETHOD, K_CLASS, K_MODULE, K_CONST };
 enum { V_PUBLIC, V_PRIVATE, V_PROTECTED };
-enum { R_LIVE, R_NEVER, R_DEAD_ONLY, R_CYCLE };
-enum { VIA_CALLS, VIA_HOLDS };
+enum { R_LIVE, R_NEVER, R_DEAD_ONLY, R_CYCLE, R_UNCERTAIN };
+enum { VIA_CALLS, VIA_HOLDS, VIA_SEND };
+/* def_t.live: 0 dead, 1 live, LIVE_MAYBE when a computed send in its own class may
+ * call it, or only such code reaches it. Truthy, so it is never a candidate. */
+#define LIVE_MAYBE 2
 #define NOT_ROOT INT32_MIN
 enum { RR_LOAD = -2, RR_SUPER = -3, RR_OPERATOR = -4, RR_HOOK = -5, RR_PUBLIC_API = -6 };
 
@@ -30,7 +33,16 @@ typedef VEC(def_t) def_vec;
 
 typedef struct { uint32_t name, file; uint8_t is_const; } tref_t;         /* test_refs + test_ref_files */
 typedef struct { uint32_t cls, mod, outer; int32_t res; } incl_t;         /* include / prepend / extend */
-typedef struct { uint32_t file, line; const char *what; } dyn_t;          /* reflective calls we can't read */
+/* Reflective calls we can't read. A send-like call on self (no receiver, or
+ * `self.`) inside a class or module may call any method of that class. */
+typedef struct {
+    uint32_t file, line;
+    const char *what;
+    int32_t self_ns;     /* qualified name of the class it sends to, or -1 */
+    uint32_t owner;      /* def whose body makes the call */
+    uint8_t public_only; /* public_send, try, try!, public_method */
+    uint8_t self_kind;   /* K_METHOD or K_SMETHOD, by the def it is written in; K_LOAD outside any def (class body) */
+} dyn_t;
 typedef struct { int32_t owner; uint32_t pat, file, line; uint8_t is_const; } pref_t; /* computed names */
 typedef struct { uint32_t file; char *req; } req_t;                       /* require "x", for gems */
 typedef struct { uint32_t file, line; char *msg; } perr_t;                /* files Prism rejected */

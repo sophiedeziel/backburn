@@ -196,9 +196,15 @@ static int yields_pattern(const pm_node_t *n, int want_const) {
     return ok && k == want_const;
 }
 
-static void add_dyn(ctx_t *c, uint32_t name, uint32_t off) {
+static void add_dyn(ctx_t *c, uint32_t name, uint32_t off, const pm_node_t *recv) {
     if (c->is_test || c->in_eval) return;
-    PUSH(DYN, (dyn_t){c->file, line_at(c, off), S(name)});
+    dyn_t d = {c->file, line_at(c, off), S(name), -1, c->cur, 0, K_LOAD};
+    if (name >= W_SEND && name <= W_PUBLIC_METHOD && c->ns.n && (!recv || PM_NODE_TYPE_P(recv, PM_SELF_NODE))) {
+        d.self_ns = (int32_t) intern(c->ns.s, c->ns.n);
+        d.public_only = name == W_PUBLIC_SEND || name == W_TRY || name == W_TRY_BANG || name == W_PUBLIC_METHOD;
+        d.self_kind = c->cur ? D.a[c->cur].kind : K_LOAD;
+    }
+    PUSH(DYN, d);
 }
 
 /* class_eval "…" and friends: rebuild the source, parse it, visit it with
@@ -393,7 +399,7 @@ static void visit_call(ctx_t *c, const pm_node_t *node) {
         } else if (PM_NODE_TYPE_P(a0, PM_SYMBOL_NODE)) {
             /* the SymbolNode visit already references it */
         } else if (!yields_pattern(a0, 0)) {
-            add_dyn(c, name, off);
+            add_dyn(c, name, off, cn->receiver);
         }
     }
 
@@ -410,7 +416,7 @@ static void visit_call(ctx_t *c, const pm_node_t *node) {
                 last_segment(s, n, &seg, &sn);
                 add_ref_str(c, seg, sn, 1, arg->location.start);
             } else if (!yields_pattern(arg, 1)) {
-                add_dyn(c, name, off);
+                add_dyn(c, name, off, cn->receiver);
             }
         }
     }

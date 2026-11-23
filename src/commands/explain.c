@@ -1,4 +1,4 @@
-/* explain NAME: why is this live, or why is it dead? */
+/* explain NAME: why is this live, uncertain, or dead? */
 #include <errno.h>
 
 #include "commands/commands.h"
@@ -75,7 +75,7 @@ static void all_roots(uint32_t t, u32vec *roots) {
         uint32_t key = def_key(d);
         for (uint32_t k = callers.off[key]; k < callers.off[key + 1]; k++) {
             uint32_t c = callers.items[k];
-            if (!seen[c] && D.a[c].live) {
+            if (!seen[c] && D.a[c].live == 1) {
                 seen[c] = 1;
                 PUSH(st, c);
             }
@@ -105,7 +105,7 @@ static void explain_one(uint32_t t, int json, int first) {
         fputs(first ? "{" : ",\n{", f);
         fputs(" \"id\": ", f);
         json_id(f, t);
-        fprintf(f, ", \"live\": %s, \"reason\": \"%s\", \"location\": ", d->live ? "true" : "false", reason_word(d->reason));
+        fprintf(f, ", \"live\": %s, \"reason\": \"%s\", \"location\": ", d->live == 1 ? "true" : "false", reason_word(d->reason));
         sbuf loc = {0};
         sb_printf(&loc, "%s:%u", FILES.a[d->file], d->line);
         json_str(f, loc.s);
@@ -121,7 +121,7 @@ static void explain_one(uint32_t t, int json, int first) {
                 sb_puts(&via, "root: ");
                 rule_desc(x->root_rule, &via);
             } else {
-                sb_puts(&via, x->via == VIA_HOLDS ? "holds" : "calls");
+                sb_puts(&via, x->via == VIA_HOLDS ? "holds" : x->via == VIA_SEND ? "send" : "calls");
             }
             fputs(", \"via\": ", f);
             json_str(f, via.s);
@@ -149,7 +149,7 @@ static void explain_one(uint32_t t, int json, int first) {
             fprintf(f, "], \"batch\": %d", d->batch + 1);
             free(cs.a);
         }
-        if (O.all_paths && d->live) {
+        if (O.all_paths && d->live == 1) {
             u32vec roots = {0};
             all_roots(t, &roots);
             fputs(", \"roots\": [", f);
@@ -166,7 +166,11 @@ static void explain_one(uint32_t t, int json, int first) {
     }
     if (!first) fputc('\n', OUT);
     if (d->live) {
-        fprintf(OUT, "%s%s%s is live  %s(%s:%u)%s\n", C_BOLD, S(d->qual), C_OFF, C_DIM, FILES.a[d->file], d->line, C_OFF);
+        if (d->live == LIVE_MAYBE)
+            fprintf(OUT, "%s%s%s is %suncertain%s: a computed send may reach it  %s(%s:%u)%s\n", C_BOLD,
+                    S(d->qual), C_OFF, C_YEL, C_OFF, C_DIM, FILES.a[d->file], d->line, C_OFF);
+        else
+            fprintf(OUT, "%s%s%s is live  %s(%s:%u)%s\n", C_BOLD, S(d->qual), C_OFF, C_DIM, FILES.a[d->file], d->line, C_OFF);
         int w = 0;
         for (size_t k = 0; k < path.n; k++) {
             int l = (int) SLEN(D.a[path.a[k]].qual);
@@ -177,12 +181,18 @@ static void explain_one(uint32_t t, int json, int first) {
             sbuf rest = {0};
             if (k == path.n - 1) rule_desc(x->root_rule, &rest);
             else sb_printf(&rest, "%s:%u", FILES.a[x->pfile], x->pline);
-            const char *verb = k == path.n - 1 ? "root " : x->via == VIA_HOLDS ? "holds" : "calls";
+            const char *verb = k == path.n - 1 ? "root " : x->via == VIA_HOLDS ? "holds" : x->via == VIA_SEND ? "maybe" : "calls";
             if (k != path.n - 1 && x->via == VIA_HOLDS) verb = "in   ";
+            if (k != path.n - 1 && x->via == VIA_SEND) {
+                int32_t s = uncertain_site(path.a[k]);
+                if (s >= 0) sb_printf(&rest, "  %s(<computed>)", DYN.a[s].what);
+            }
             fprintf(OUT, "  %s  %-*s  %s%s%s\n", verb, w, S(x->qual), C_DIM, rest.s ? rest.s : "", C_OFF);
             free(rest.s);
         }
-        if (O.all_paths) {
+        if (d->live == LIVE_MAYBE)
+            fprintf(OUT, "  %snot reported as dead; check which names the send can receive before deleting it%s\n", C_DIM, C_OFF);
+        if (O.all_paths && d->live == 1) {
             u32vec roots = {0};
             all_roots(t, &roots);
             fprintf(OUT, "  %zu root%s reach it:\n", roots.n, roots.n == 1 ? "" : "s");

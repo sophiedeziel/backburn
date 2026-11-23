@@ -39,6 +39,16 @@ check "class Admin::Thing < ::Thing resolves to the top-level Thing" \
     same $C/self_superclass.expected.tsv $BIN scan --preset rails --format tsv $C/self_superclass
 check "HAML and Slim views are read; their comments are not" \
     same $C/haml_slim.expected.tsv $BIN scan --format tsv $C/haml_slim
+check "send(name) on self makes its class's dead methods uncertain, not dead" \
+    same $C/uncertain_send.expected.tsv $BIN scan --format tsv $C/uncertain_send
+check "explain shows the send that makes a definition uncertain" \
+    same $C/uncertain_send.expected-explain.txt $BIN explain 'Config::DEFAULTS' --color never $C/uncertain_send
+uncertain_ids() {
+    $BIN scan --format json "$C/uncertain_send" 2>/dev/null | ruby -rjson -e '
+      puts JSON.parse(STDIN.read)["uncertain"].map { |u| "#{u["id"]} #{u["send"]["call"]}" }' | tr '\n' ' '
+}
+check "scan json lists uncertain definitions with their send" test "$(uncertain_ids)" = \
+    "method:Dispatcher#start send method:Dispatcher#stop send method:Dispatcher#prepare send module:Config send constant:Config::DEFAULTS send method:Factory.widget send method:Exporter#csv public_send "
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"

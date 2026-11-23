@@ -10,7 +10,18 @@
 #include "output/baseline.h"
 
 const char *reason_word(int r) {
-    return r == R_NEVER ? "unreferenced" : r == R_DEAD_ONLY ? "dead-chain" : r == R_CYCLE ? "dead-cycle" : "live";
+    return r == R_NEVER ? "unreferenced" : r == R_DEAD_ONLY ? "dead-chain" : r == R_CYCLE ? "dead-cycle"
+         : r == R_UNCERTAIN ? "uncertain" : "live";
+}
+
+/* Definitions a computed send on self may call, by location. Never candidates. */
+u32vec UNCERTAIN;
+
+static void select_uncertain(void) {
+    if (UNCERTAIN.n) return;
+    for (uint32_t i = 1; i < D.n; i++)
+        if (D.a[i].live == LIVE_MAYBE) PUSH(UNCERTAIN, i);
+    qsort(UNCERTAIN.a, UNCERTAIN.n, sizeof *UNCERTAIN.a, def_loc_qcmp);
 }
 
 static const char *legacy_reason(int r) {
@@ -87,13 +98,17 @@ void text_scan(void) {
         cnt[D.a[CANDS.a[k]].reason]++;
         tests += D.a[CANDS.a[k]].test_ref;
     }
+    select_uncertain();
     header_line();
-    if (!O.quiet)
-        fprintf(OUT, "%zu dead · %zu unreferenced · %zu dead-chain · %zu dead-cycle · %zu used only by tests\n",
+    if (!O.quiet) {
+        fprintf(OUT, "%zu dead · %zu unreferenced · %zu dead-chain · %zu dead-cycle · %zu used only by tests",
                 CANDS.n, cnt[R_NEVER], cnt[R_DEAD_ONLY], cnt[R_CYCLE], tests);
+        if (UNCERTAIN.n) fprintf(OUT, " · %zu uncertain", UNCERTAIN.n);
+        fputc('\n', OUT);
+    }
     int width = 0;
-    for (size_t k = 0; k < CANDS.n; k++) {
-        const def_t *d = &D.a[CANDS.a[k]];
+    for (size_t k = 0; k < CANDS.n + UNCERTAIN.n; k++) {
+        const def_t *d = &D.a[k < CANDS.n ? CANDS.a[k] : UNCERTAIN.a[k - CANDS.n]];
         int w = (int) strlen(FILES.a[d->file]) + 1 + snprintf(NULL, 0, "%u", d->line);
         if (w > width) width = w;
     }
@@ -126,6 +141,20 @@ void text_scan(void) {
                 fputs(C_OFF, OUT);
                 free(cs.a);
             }
+            fputc('\n', OUT);
+        }
+    }
+    if (UNCERTAIN.n) {
+        fprintf(OUT, "\n%sUncertain: a computed send may reach these (%zu)%s\n", C_BOLD, UNCERTAIN.n, C_OFF);
+        for (size_t k = 0; k < UNCERTAIN.n; k++) {
+            const def_t *d = &D.a[UNCERTAIN.a[k]];
+            char loc[1024];
+            snprintf(loc, sizeof loc, "%s:%u", FILES.a[d->file], d->line);
+            fprintf(OUT, "  %-*s  %-8s %s", width, loc, kind_word(d->kind), S(d->qual));
+            if (d->test_ref) fprintf(OUT, "  %s[tests]%s", C_YEL, C_OFF);
+            int32_t s = uncertain_site(UNCERTAIN.a[k]);
+            if (s >= 0)
+                fprintf(OUT, "  %s← %s(<computed>) %s:%u%s", C_DIM, DYN.a[s].what, FILES.a[DYN.a[s].file], DYN.a[s].line, C_OFF);
             fputc('\n', OUT);
         }
     }
@@ -323,6 +352,31 @@ void json_report(void) {
         fputs("] }", f);
     }
     fputs(first ? "],\n" : "\n  ],\n", f);
+    select_uncertain();
+    fputs("  \"uncertain\": [", f);
+    for (size_t k = 0; k < UNCERTAIN.n; k++) {
+        uint32_t i = UNCERTAIN.a[k];
+        const def_t *d = &D.a[i];
+        fputs(k ? ",\n    { \"id\": " : "\n    { \"id\": ", f);
+        json_id(f, i);
+        fprintf(f, ", \"kind\": \"%s\", \"name\": ", kind_word(d->kind));
+        json_str(f, S(d->qual));
+        fputs(", \"location\": { \"file\": ", f);
+        json_str(f, FILES.a[d->file]);
+        fprintf(f, ", \"line\": %u, \"end_line\": %u }, \"visibility\": \"%s\", \"tests\": %s, \"send\": ", d->line,
+                d->end_line, vis_word(d->vis), d->test_ref ? "true" : "false");
+        int32_t s = uncertain_site(i);
+        if (s < 0) fputs("null", f);
+        else {
+            fputs("{ \"file\": ", f);
+            json_str(f, FILES.a[DYN.a[s].file]);
+            fprintf(f, ", \"line\": %u, \"call\": ", DYN.a[s].line);
+            json_str(f, DYN.a[s].what);
+            fputs(" }", f);
+        }
+        fputs(" }", f);
+    }
+    fputs(UNCERTAIN.n ? "\n  ],\n" : "],\n", f);
     fputs("  \"dynamic_sites\": [", f);
     for (size_t k = 0; k < DYN.n; k++) {
         fputs(k ? ",\n    { \"file\": " : "\n    { \"file\": ", f);

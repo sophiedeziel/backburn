@@ -6,6 +6,7 @@
 #include "analysis/batches.h"
 
 extern u32vec CANDS; /* candidates after --only and --test-refs, by location */
+extern u32vec UNCERTAIN; /* definitions a computed send on self may call, by location */
 
 void select_candidates(void);
 int batch_selected(const batch_t *b);
