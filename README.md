@@ -459,3 +459,7 @@ Other top-level files:
 - `rails.roots` is the spec's original roots file.
 - `samples/` holds example project roots files.
 - `gem_usage.rb` is a deprecated shim for `backburn gems`.
+
+## License
+
+Released under the [MIT License](LICENSE).
