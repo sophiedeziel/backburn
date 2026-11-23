@@ -105,22 +105,106 @@ static int pref_cmp(const void *a, const void *b) {
     return strcmp(S(x->pat), S(y->pat));
 }
 
+/* Byte order of two names, read forwards (names starting with the same bytes sit together) or
+ * backwards (names ending with the same bytes sit together). */
+static int name_cmp(uint32_t x, uint32_t y) {
+    size_t xn = SLEN(x), yn = SLEN(y);
+    int c = memcmp(S(x), S(y), xn < yn ? xn : yn);
+    return c ? c : (xn > yn) - (xn < yn);
+}
+
+static int name_rcmp(uint32_t x, uint32_t y) {
+    const unsigned char *a = (const unsigned char *) S(x), *b = (const unsigned char *) S(y);
+    size_t xn = SLEN(x), yn = SLEN(y);
+    for (size_t i = 1; i <= xn && i <= yn; i++)
+        if (a[xn - i] != b[yn - i]) return a[xn - i] - b[yn - i];
+    return (xn > yn) - (xn < yn);
+}
+
+static int fwd_qcmp(const void *a, const void *b) { return name_cmp(*(const uint32_t *) a, *(const uint32_t *) b); }
+static int rev_qcmp(const void *a, const void *b) { return name_rcmp(*(const uint32_t *) a, *(const uint32_t *) b); }
+
+/* Where a name stands against lit (n bytes) as its prefix, or as its suffix when back is set:
+ * < 0 sorts before every name that has it, 0 has it, > 0 sorts after. */
+static int affix_cmp(uint32_t nm, const char *lit, size_t n, int back) {
+    const unsigned char *s = (const unsigned char *) S(nm), *l = (const unsigned char *) lit;
+    size_t sn = SLEN(nm);
+    for (size_t i = 0; i < n && i < sn; i++) {
+        unsigned char a = back ? s[sn - 1 - i] : s[i], b = back ? l[n - 1 - i] : l[i];
+        if (a != b) return a - b;
+    }
+    return sn < n ? -1 : 0;
+}
+
+/* First index in names whose affix_cmp is >= want (want 0: where the run starts, 1: where it ends). */
+static size_t affix_bound(const u32vec *names, const char *lit, size_t n, int back, int want) {
+    size_t lo = 0, hi = names->n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (affix_cmp(names->a[mid], lit, n, back) < want) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
+/* Names of one kind sorted both ways, so a pattern's literal head or tail picks out the
+ * contiguous run of names that can match it instead of every name. ids keeps them in id order,
+ * which is the order their bytes sit in the interner: a pattern with neither head nor tail
+ * tries every name, and on a large app reading them in that order is twice as fast. */
+typedef struct { u32vec ids, fwd, rev; } name_order_t;
+
+static void sorted_copy(u32vec *to, const u32vec *from, int (*cmp)(const void *, const void *)) {
+    to->n = to->cap = from->n;
+    to->a = xrealloc(NULL, (from->n + 1) * sizeof *to->a);
+    memcpy(to->a, from->a, from->n * sizeof *from->a);
+    qsort(to->a, to->n, sizeof *to->a, cmp);
+}
+
+static void order_names(name_order_t *o) {
+    sorted_copy(&o->fwd, &o->ids, fwd_qcmp);
+    sorted_copy(&o->rev, &o->ids, rev_qcmp);
+}
+
+/* The smaller of the runs that share g's head and its tail; every name when it has neither. */
+static void candidates(const name_order_t *o, const glob_pat *g, const uint32_t **a, size_t *n) {
+    *a = o->ids.a;
+    *n = o->ids.n;
+    if (g->head) {
+        size_t lo = affix_bound(&o->fwd, g->pat, g->head, 0, 0), hi = affix_bound(&o->fwd, g->pat, g->head, 0, 1);
+        *a = o->fwd.a + lo;
+        *n = hi - lo;
+    }
+    if (g->tail) {
+        const char *t = g->pat + g->len - g->tail;
+        size_t lo = affix_bound(&o->rev, t, g->tail, 1, 0), hi = affix_bound(&o->rev, t, g->tail, 1, 1);
+        if (hi - lo < *n) {
+            *a = o->rev.a + lo;
+            *n = hi - lo;
+        }
+    }
+}
+
 void expand_patterns(void) {
     if (!PREF.n) return;
-    u32vec mnames = {0}, cnames = {0};
+    name_order_t meths = {0}, consts = {0};
     for (uint32_t k = 0; k < NN; k++) {
-        if (BY_METH.off[k + 1] > BY_METH.off[k]) PUSH(mnames, k);
-        if (BY_CONST.off[k + 1] > BY_CONST.off[k]) PUSH(cnames, k);
+        if (BY_METH.off[k + 1] > BY_METH.off[k]) PUSH(meths.ids, k);
+        if (BY_CONST.off[k + 1] > BY_CONST.off[k]) PUSH(consts.ids, k);
     }
+    order_names(&meths);
+    order_names(&consts);
     qsort(PREF.a, PREF.n, sizeof *PREF.a, pref_cmp);
     for (size_t i = 0; i < PREF.n;) {
         size_t j = i;
         while (j < PREF.n && PREF.a[j].is_const == PREF.a[i].is_const && PREF.a[j].pat == PREF.a[i].pat) j++;
         glob_pat g;
         glob_compile(&g, S(PREF.a[i].pat));
-        const u32vec *names = PREF.a[i].is_const ? &cnames : &mnames;
-        for (size_t k = 0; k < names->n; k++) {
-            uint32_t nm = names->a[k];
+        const uint32_t *cand;
+        size_t ncand;
+        candidates(PREF.a[i].is_const ? &consts : &meths, &g, &cand, &ncand);
+        /* refs are sorted later (dedupe_refs, the batch and test-file indexes), so order is free */
+        for (size_t k = 0; k < ncand; k++) {
+            uint32_t nm = cand[k];
             if (!glob_match(&g, S(nm), SLEN(nm))) continue;
             for (size_t o = i; o < j; o++) {
                 const pref_t *pr = &PREF.a[o];
@@ -130,8 +214,12 @@ void expand_patterns(void) {
         }
         i = j;
     }
-    free(mnames.a);
-    free(cnames.a);
+    name_order_t *orders[] = {&meths, &consts};
+    for (int k = 0; k < 2; k++) {
+        free(orders[k]->ids.a);
+        free(orders[k]->fwd.a);
+        free(orders[k]->rev.a);
+    }
 }
 
 /* by_qual maps the first nq qualified name ids to a class / module def, or -1. */

@@ -5,7 +5,7 @@
 #include "core/glob.h"
 
 void glob_compile(glob_pat *g, const char *pat) {
-    size_t n = strlen(pat), after_star = 0;
+    size_t n = strlen(pat), first_star = 0, after_star = 0;
     memset(g, 0, sizeof *g);
     g->pat = pat;
     g->len = n;
@@ -13,11 +13,21 @@ void glob_compile(glob_pat *g, const char *pat) {
     g->exact = g->head == n;
     for (size_t i = 0; i < n; i++) {
         if (pat[i] == '[') g->libc = 1;
-        else if (pat[i] == '*') g->star = 1, after_star = i + 1;
+        else if (pat[i] == '*') first_star = g->star ? first_star : i, g->star = 1, after_star = i + 1;
         else if (pat[i] == '\\' && ++i == n) g->libc = 1;
     }
-    /* the bytes after the last unescaped `*` must end the string, if they are all literal */
-    if (g->star && strcspn(pat + after_star, "?\\[") == n - after_star) g->tail = n - after_star;
+    /* the bytes after the last unescaped `*` must end the string, if they are all literal. A `*`
+     * inside brackets is no wildcard, so bracket patterns get no tail. */
+    if (g->star && !g->libc && strcspn(pat + after_star, "?\\[") == n - after_star) g->tail = n - after_star;
+    /* the longest literal run between the first and the last `*`: every match holds it somewhere
+     * between its head and its tail. `*_to_*` has neither, but most names lack `_to_`. */
+    if (g->star && !g->libc)
+        for (size_t i = first_star + 1, last = after_star - 1; i < last;) {
+            size_t k = strcspn(pat + i, "*?\\");
+            if (k > last - i) k = last - i;
+            if (k > g->midn) g->mid = pat + i, g->midn = k;
+            i += k + (pat[i + k] == '\\' ? 2 : 1);
+        }
 }
 
 /* `*` with one backtrack point: on a mismatch, let the last `*` absorb one more byte. */
@@ -61,6 +71,7 @@ int glob_match(const glob_pat *g, const char *s, size_t n) {
     if (n < g->head || memcmp(g->pat, s, g->head)) return 0;
     if (g->tail && (n < g->head + g->tail || memcmp(g->pat + g->len - g->tail, s + n - g->tail, g->tail)))
         return 0;
+    if (g->midn && !memmem(s + g->head, n - g->head - g->tail, g->mid, g->midn)) return 0;
     return match_bytes(g->pat + g->head, s + g->head, s + n);
 }
 

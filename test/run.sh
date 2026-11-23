@@ -70,6 +70,8 @@ check "def NestedClass.example_method in class ::OtherClass looks NestedClass up
     same $C/singleton_receiver_absolute.expected.tsv $BIN scan --no-config --roots $C/singleton_receiver_absolute.roots --format tsv $C/singleton_receiver_absolute
 check "kind rules see modules mixed into a superclass" \
     same $C/superclass_mixin.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/superclass_mixin
+check "computed names reach every name with their literal head and tail, and only those" \
+    same $C/computed_names.expected.tsv $BIN scan --no-config --format tsv $C/computed_names
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"
