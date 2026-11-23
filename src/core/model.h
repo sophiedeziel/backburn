@@ -23,7 +23,7 @@ typedef struct {
     uint8_t kind, vis, overrides, live, test_ref, reason, nodoc, via;
     uint8_t super_top; /* superclass written with a leading ::, resolved from the top level */
     uint32_t name, qual, file, line, end_line;
-    int32_t super_, outer; /* classes: superclass as written, namespace written in */
+    int32_t super_, outer; /* classes: superclass as written, Module.nesting outside the class (-1 at top level) */
     VEC(ref_t) refs;
     uint32_t in_live, in_dead;
     int32_t parent, root_rule, batch;
@@ -32,7 +32,8 @@ typedef struct {
 typedef VEC(def_t) def_vec;
 
 typedef struct { uint32_t name, file; uint8_t is_const; } tref_t;         /* test_refs + test_ref_files */
-typedef struct { uint32_t cls, mod, outer; int32_t res; } incl_t;         /* include / prepend / extend */
+/* include / prepend / extend; nest is Module.nesting inside the class, innermost first, newline-separated */
+typedef struct { uint32_t cls, mod; int32_t nest, res; } incl_t;
 /* Reflective calls we can't read. A send-like call on self (no receiver, or
  * `self.`) inside a class or module may call any method of that class. */
 typedef struct {

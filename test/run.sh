@@ -52,5 +52,12 @@ check "scan json lists uncertain definitions with their send" test "$(uncertain_
 check "< Superclass reaches constants defined inside the class" \
     same $C/kind_constant_owner.expected.tsv $BIN scan --no-config --roots $C/kind_constant_owner.roots --format tsv $C/kind_constant_owner
 
+check "class OtherModule::ExampleClass looks constants up in itself, then the top level" \
+    same $C/nesting_compact_path.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_compact_path
+check "class ::OtherModule::ExampleClass in GenericModule includes GenericModule's mixin" \
+    same $C/nesting_absolute_path.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_absolute_path
+check "class ::ExampleClass in GenericModule prefers GenericModule's mixin to the top-level one" \
+    same $C/nesting_absolute_class.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_absolute_class
+
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"

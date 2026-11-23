@@ -1,0 +1,2 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+method:OtherModule::ExampleMixin#perform	method	OtherModule::ExampleMixin#perform	example.rb	3	3	unreferenced	0	1
