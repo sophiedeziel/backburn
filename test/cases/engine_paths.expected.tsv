@@ -1,0 +1,2 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+class:UnusedExampleClass	class	UnusedExampleClass	engines/example_engine/app/models/unused_example_class.rb	1	2	unreferenced	0	1

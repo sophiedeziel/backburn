@@ -185,7 +185,7 @@ backburn --preset rails --preset sidekiq --preset graphql
 
 | Preset | Covers |
 | --- | --- |
-| `rails` | controllers, mailers, mailboxes (`< ActionMailbox::Base`), jobs, migrations, `config/`, `lib/tasks/`, errors, Action Cable, protocols Rails calls on your objects (`to_partial_path`, `table_name_prefix`/`_suffix`, `as_json`, ...), `bin/`, `script/` |
+| `rails` | controllers, mailers, mailboxes (`< ActionMailbox::Base`), jobs, migrations, `config/`, `lib/tasks/` and `.rake` files (also nested, as in `engines/*/config/`), errors, Action Cable, protocols Rails calls on your objects (`to_partial_path`, `table_name_prefix`/`_suffix`, `as_json`, ...), `bin/`, `script/` |
 | `graphql` | GraphQL-ruby schema classes, types, mutations, resolvers, dataloader sources |
 | `sidekiq` | workers marked by `Sidekiq::Job`, `Sidekiq::Worker`, `Shoryuken::Worker` |
 | `phlex` | Phlex and ViewComponent components |

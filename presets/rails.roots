@@ -18,6 +18,10 @@ path:db/migrate/*
 path:db/seeds.rb
 path:config/*
 path:lib/tasks/*
+path:*/db/migrate/*
+path:*/config/*
+path:*/lib/tasks/*
+path:*.rake
 
 # --- errors are raised by class name, rescued by class name; their methods are hooks
 < StandardError
