@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: make test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      # Prism generates part of its C source from Ruby templates, and the
+      # JSON/SARIF checks in test/run.sh parse output with Ruby.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      # The pinned Prism build only changes when PRISM_COMMIT in the Makefile does.
+      - name: Cache Prism
+        uses: actions/cache@v6
+        with:
+          path: vendor/prism
+          key: prism-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+
+      - name: Build
+        run: make -j4
+
+      - name: Test
+        run: make test
