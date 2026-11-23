@@ -67,9 +67,20 @@ static void load_rules(const char *text, const char *label) {
     }
 }
 
+/* Is a module matching pat mixed into class cls itself? */
+static int mixes_in(const char *pat, uint32_t cls) {
+    CSR_FOR(INC_BY_CLS, cls, k) {
+        const incl_t *in = &INC.a[k];
+        if (!fnmatch(pat, S(in->mod), 0)) return 1;
+        if (in->res >= 0 && !fnmatch(pat, S(D.a[in->res].qual), 0)) return 1;
+    }
+    return 0;
+}
+
 static int kind_direct(const char *pat, const char *owner, int64_t oid) {
     if (!fnmatch(pat, owner, 0)) return 1;
     if (oid < 0 || oid >= NN) return 0;
+    if (mixes_in(pat, (uint32_t) oid)) return 1;
     int32_t cd = CLS_BY_QUAL[oid];
     for (int step = 0; cd >= 0 && step < 32; step++) {
         const def_t *d = &D.a[cd];
@@ -78,12 +89,8 @@ static int kind_direct(const char *pat, const char *owner, int64_t oid) {
         int32_t r = SUPER_DEF[cd];
         if (r < 0) break;
         if (!fnmatch(pat, S(D.a[r].qual), 0)) return 1;
+        if (mixes_in(pat, D.a[r].qual)) return 1;
         cd = CLS_BY_QUAL[D.a[r].qual];
-    }
-    CSR_FOR(INC_BY_CLS, (uint32_t) oid, k) {
-        const incl_t *in = &INC.a[k];
-        if (!fnmatch(pat, S(in->mod), 0)) return 1;
-        if (in->res >= 0 && !fnmatch(pat, S(D.a[in->res].qual), 0)) return 1;
     }
     return 0;
 }

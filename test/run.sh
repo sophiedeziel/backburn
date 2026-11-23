@@ -68,6 +68,8 @@ check "send(name) in def ExampleClass.dispatch makes ExampleClass's singleton me
     test "$(uncertain_ids --no-config --roots $C/singleton_receiver.roots $C/singleton_receiver)" = "method:ExampleClass.other_method send "
 check "def NestedClass.example_method in class ::OtherClass looks NestedClass up in GenericModule" \
     same $C/singleton_receiver_absolute.expected.tsv $BIN scan --no-config --roots $C/singleton_receiver_absolute.roots --format tsv $C/singleton_receiver_absolute
+check "kind rules see modules mixed into a superclass" \
+    same $C/superclass_mixin.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/superclass_mixin
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"
