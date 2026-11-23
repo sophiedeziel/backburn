@@ -28,13 +28,13 @@ Gem::Specification.new do |spec|
 
   # Everything needed to build and document backburn, including Prism's C
   # sources vendored by `rake vendor:prism`. test/, samples/, vendor/ (Prism's
-  # git checkout) and the deprecated gem_usage.rb stay out.
+  # git checkout), the benchmark script and the deprecated gem_usage.rb stay out.
   spec.files = Dir.chdir(__dir__) do
     Dir[
       "{docs,exe,lib,presets,scripts,src}/**/*", "Makefile", "README.md", "LICENSE", "rails.roots",
       "ext/backburn/extconf.rb", "ext/backburn/prism/{COMMIT,LICENSE.md,Makefile}",
       "ext/backburn/prism/{include,src}/**/*"
-    ].select { |f| File.file?(f) }
+    ].select { |f| File.file?(f) } - ["scripts/bench.rb"]
   end
   spec.bindir = "exe"
   spec.executables = ["backburn"]

@@ -1,7 +1,6 @@
 /* The reference graph: name indexes, name-pattern expansion, and class / mixin resolution. */
-#include <fnmatch.h>
-
 #include "analysis/graph.h"
+#include "core/glob.h"
 #include "core/intern.h"
 
 uint32_t NN; /* names known when analysis starts */
@@ -117,12 +116,12 @@ void expand_patterns(void) {
     for (size_t i = 0; i < PREF.n;) {
         size_t j = i;
         while (j < PREF.n && PREF.a[j].is_const == PREF.a[i].is_const && PREF.a[j].pat == PREF.a[i].pat) j++;
-        const char *pat = S(PREF.a[i].pat);
-        size_t plen = strcspn(pat, "*\\");
+        glob_pat g;
+        glob_compile(&g, S(PREF.a[i].pat));
         const u32vec *names = PREF.a[i].is_const ? &cnames : &mnames;
         for (size_t k = 0; k < names->n; k++) {
             uint32_t nm = names->a[k];
-            if (strncmp(S(nm), pat, plen) || fnmatch(pat, S(nm), 0)) continue;
+            if (!glob_match(&g, S(nm), SLEN(nm))) continue;
             for (size_t o = i; o < j; o++) {
                 const pref_t *pr = &PREF.a[o];
                 if (pr->owner < 0) PUSH(TR, (tref_t){nm, pr->file, pr->is_const});

@@ -2,12 +2,14 @@
 #ifndef BACKBURN_ANALYSIS_ROOTS_H
 #define BACKBURN_ANALYSIS_ROOTS_H
 
+#include "core/glob.h"
 #include "core/model.h"
 
 enum { RULE_PAT, RULE_KIND, RULE_PATH };
 typedef struct {
     int type, pub;
     char *pat, *text, *source; /* glob, the line as written, preset:line or file:line */
+    glob_pat glob;             /* pat, compiled */
     uint32_t matched;
     uint8_t *memo;             /* RULE_KIND: per owner name id, 0 unknown, 1 yes, 2 no */
 } rule_t;

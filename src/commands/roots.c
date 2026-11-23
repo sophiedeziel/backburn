@@ -1,6 +1,4 @@
 /* roots: how many definitions each root rule matched. */
-#include <fnmatch.h>
-
 #include "commands/commands.h"
 #include "core/json.h"
 #include "cli/options.h"
@@ -19,7 +17,8 @@ int cmd_roots(void) {
         int32_t pr = FILE_PATH_RULE[d->file];
         if (pr >= 0)
             for (size_t r = 0; r < RULES.n; r++)
-                if (RULES.a[r].type == RULE_PATH && !fnmatch(RULES.a[r].pat, FILES.a[d->file], 0)) RULES.a[r].matched++;
+                if (RULES.a[r].type == RULE_PATH && glob_match(&RULES.a[r].glob, FILES.a[d->file], strlen(FILES.a[d->file])))
+                    RULES.a[r].matched++;
         if (is_meth(d->kind)) {
             if (d->overrides) builtin[-RR_SUPER]++;
             if (is_operator(d->name)) builtin[-RR_OPERATOR]++;

@@ -423,12 +423,13 @@ For contributors, or to run Backburn from a checkout. Requirements:
 
 ```sh
 make        # fetches the pinned Prism commit into vendor/prism, builds libprism.a, then backburn
-make test   # runs the checks in test/ (test/run.sh)
+make test   # checks glob matching against fnmatch, then runs the checks in test/ (test/run.sh)
+make bench  # times scans of pinned public codebases (see Benchmarks below)
 ```
 
 The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COMMIT`) and builds its static library. It then compiles `src/` into `build/` (object files plus the generated `build/presets.h` and `build/version.h`) and links `./backburn`. Prism's C API changed in 2026, so stick to that commit unless you also update the sources. The result is one self-contained executable with the presets compiled in. Copy it anywhere on your `PATH`. `make clean` removes the build output.
 
-`make test` runs `test/run.sh`, which has 11 checks:
+`make test` first builds and runs `test/glob_test.c`, which checks Backburn's glob matcher (`src/core/glob.c`) against the C library's `fnmatch` on a million random patterns and strings. It then runs `test/run.sh`, which has 11 checks:
 
 - 9 checks against `test/fixture/`:
   - the legacy `--tsv` output matches the spec's `expected.tsv`
@@ -443,6 +444,15 @@ The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COM
   - `self_superclass`: `class Admin::Thing < ::Thing`
   - `haml_slim`: HAML and Slim views
   - `uncertain_send`: `send(name)` on self makes methods uncertain, not dead (scan, `explain` and JSON)
+
+### Benchmarks
+
+`make bench` times `backburn scan --preset rails` on two public codebases pinned to fixed commits, Rails and Discourse. It downloads them once, as GitHub tarballs, into `~/.cache/backburn-bench` (`BENCH_DIR` overrides it). Each binary gets one warm-up run, then `RUNS` timed runs (5 by default), and the median is reported. Pass a second binary to compare: `make bench BASE=/path/to/other/backburn` alternates their runs, prints the change, and checks that both write the same report.
+
+```sh
+git stash && make && cp backburn /tmp/backburn-base && git stash pop
+make && make bench BASE=/tmp/backburn-base
+```
 
 ### The source gem
 
@@ -491,14 +501,14 @@ It publishes with [trusted publishing](https://guides.rubygems.org/trusted-publi
 | Path | What |
 | --- | --- |
 | `src/main.c` | entry point |
-| `src/core/` | `util`, `intern` (string interner), `model` (definition tables), `json` |
-| `src/index/` | `walk` (file walk, globs), `indexer` (Prism visitor), `erb`, `haml` (HAML/Slim to Ruby) |
+| `src/core/` | `util`, `intern` (string interner), `model` (definition tables), `json`, `glob` (fnmatch-compatible glob matching) |
+| `src/index/` | `walk` (file walk, path globs), `indexer` (Prism visitor), `erb`, `haml` (HAML/Slim to Ruby) |
 | `src/analysis/` | `graph` (name indexes, pattern expansion, class and mixin resolution), `roots`, `mark` (marking, classification), `batches`, `analysis` (pipeline, stable ids) |
 | `src/cli/` | `options`, `cli` (argument parsing), `config` (the YAML subset) |
 | `src/output/` | `report` (text, TSV, JSON, SARIF), `baseline` |
 | `src/commands/` | `scan`, `explain`, `roots`, `gems`, `gemfile`, `init`, `commands.h` |
 | `presets/*.roots` | the built-in presets, compiled into the binary |
-| `test/` | `run.sh` (what `make test` runs), `fixture/` (one rule per file, plus expected outputs), `cases/` (regression cases), `smoke.sh` (installs a gem and checks the installed command) |
+| `test/` | `run.sh` (what `make test` runs), `glob_test.c` (the glob matcher against `fnmatch`), `fixture/` (one rule per file, plus expected outputs), `cases/` (regression cases), `smoke.sh` (installs a gem and checks the installed command) |
 | `.github/workflows/` | `gems.yml` (builds and smoke-tests every gem), `release.yml` (publishes them on a `v*` tag) |
 | `docs/` | `technical-spec.md` (algorithm, rules, known limits), `cli-and-outputs.md` (CLI, formats, config, exit codes) |
 | `exe/backburn` | the gem's executable: a Ruby wrapper that runs the native binary installed as `libexec/backburn` |
@@ -508,9 +518,9 @@ It publishes with [trusted publishing](https://guides.rubygems.org/trusted-publi
 Other top-level files:
 
 - `backburn.gemspec` packages Backburn as a gem. It reads its version from `lib/backburn/version.rb`.
-- `Makefile` builds `src/` into `build/`. It builds Prism from `ext/backburn/prism` when that exists, and otherwise fetches it into `vendor/prism` (not committed). It also has the `test` and `clean` targets.
+- `Makefile` builds `src/` into `build/`. It builds Prism from `ext/backburn/prism` when that exists, and otherwise fetches it into `vendor/prism` (not committed). It also has the `test`, `bench` and `clean` targets.
 - `Rakefile` has `vendor:prism`, `build`, which builds the source gem into `pkg/`, and `native`, which builds a platform gem.
-- `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`, and `scripts/version-h.sh` generates `build/version.h` from `lib/backburn/version.rb`.
+- `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`, and `scripts/version-h.sh` generates `build/version.h` from `lib/backburn/version.rb`. `scripts/bench.rb` is what `make bench` runs.
 - `rails.roots` is the spec's original roots file.
 - `samples/` holds example project roots files.
 - `gem_usage.rb` is a deprecated shim for `backburn gems`.

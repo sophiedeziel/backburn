@@ -1,20 +1,20 @@
 /* The file walk: which files are read, and the path globs that choose them. */
 #include <dirent.h>
-#include <fnmatch.h>
 #include <sys/stat.h>
 
 #include "index/walk.h"
+#include "core/glob.h"
 #include "core/intern.h"
 #include "core/model.h"
 #include "cli/options.h"
 #include "index/indexer.h"
 
 /* A glob matches a relative path at any depth unless it starts with /.
- * fnmatch runs without FNM_PATHNAME, so * also crosses /, and a leading
- * double-star-slash may match nothing. */
+ * Globs match like fnmatch without FNM_PATHNAME (core/glob.h), so * also
+ * crosses /, and a leading double-star-slash may match nothing. */
 static int glob_match_at(const char *g, const char *path) {
-    if (!fnmatch(g, path, 0)) return 1;
-    if (!strncmp(g, "**/", 3) && !fnmatch(g + 3, path, 0)) return 1;
+    if (glob_match_str(g, path)) return 1;
+    if (!strncmp(g, "**/", 3) && glob_match_str(g + 3, path)) return 1;
     return 0;
 }
 
