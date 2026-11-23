@@ -1,0 +1,4 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+module:GenericModule	module	GenericModule	app/models/generic_module.rb	1	5	unreferenced	0	1
+class:GenericModule::ClassWithConstant	class	GenericModule::ClassWithConstant	app/models/generic_module.rb	2	4	unreferenced	0	1
+constant:GenericModule::ClassWithConstant::EXAMPLE_CONSTANT	constant	GenericModule::ClassWithConstant::EXAMPLE_CONSTANT	app/models/generic_module.rb	3	3	unreferenced	0	1

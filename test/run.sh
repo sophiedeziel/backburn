@@ -49,6 +49,8 @@ uncertain_ids() {
 }
 check "scan json lists uncertain definitions with their send" test "$(uncertain_ids)" = \
     "method:Dispatcher#start send method:Dispatcher#stop send method:Dispatcher#prepare send module:Config send constant:Config::DEFAULTS send method:Factory.widget send method:Exporter#csv public_send "
+check "< Superclass reaches constants defined inside the class" \
+    same $C/kind_constant_owner.expected.tsv $BIN scan --no-config --roots $C/kind_constant_owner.roots --format tsv $C/kind_constant_owner
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"
