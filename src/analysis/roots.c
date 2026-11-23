@@ -1,7 +1,6 @@
 /* Root rules: the entrances to the maze (presets, roots files, hooks, --public-api). */
 #include <ctype.h>
 #include <errno.h>
-#include <fnmatch.h>
 
 #include "analysis/roots.h"
 #include "core/intern.h"
@@ -63,48 +62,51 @@ static void load_rules(const char *text, const char *label) {
             r.type = RULE_PAT;
         }
         r.pat = xstrdup(q);
+        glob_compile(&r.glob, r.pat);
         PUSH(RULES, r);
     }
 }
 
-/* Is a module matching pat mixed into class cls itself? */
-static int mixes_in(const char *pat, uint32_t cls) {
+static int glob_name(const glob_pat *g, uint32_t name) { return glob_match(g, S(name), SLEN(name)); }
+
+/* Is a module matching g mixed into class cls itself? */
+static int mixes_in(const glob_pat *g, uint32_t cls) {
     CSR_FOR(INC_BY_CLS, cls, k) {
         const incl_t *in = &INC.a[k];
-        if (!fnmatch(pat, S(in->mod), 0)) return 1;
-        if (in->res >= 0 && !fnmatch(pat, S(D.a[in->res].qual), 0)) return 1;
+        if (glob_name(g, in->mod)) return 1;
+        if (in->res >= 0 && glob_name(g, D.a[in->res].qual)) return 1;
     }
     return 0;
 }
 
-static int kind_direct(const char *pat, const char *owner, int64_t oid) {
-    if (!fnmatch(pat, owner, 0)) return 1;
+static int kind_direct(const glob_pat *g, const char *owner, size_t on, int64_t oid) {
+    if (glob_match(g, owner, on)) return 1;
     if (oid < 0 || oid >= NN) return 0;
-    if (mixes_in(pat, (uint32_t) oid)) return 1;
+    if (mixes_in(g, (uint32_t) oid)) return 1;
     int32_t cd = CLS_BY_QUAL[oid];
     for (int step = 0; cd >= 0 && step < 32; step++) {
         const def_t *d = &D.a[cd];
         if (d->kind != K_CLASS || d->super_ < 0) break;
-        if (!fnmatch(pat, S(d->super_), 0)) return 1;
+        if (glob_name(g, (uint32_t) d->super_)) return 1;
         int32_t r = SUPER_DEF[cd];
         if (r < 0) break;
-        if (!fnmatch(pat, S(D.a[r].qual), 0)) return 1;
-        if (mixes_in(pat, D.a[r].qual)) return 1;
+        if (glob_name(g, D.a[r].qual)) return 1;
+        if (mixes_in(g, D.a[r].qual)) return 1;
         cd = CLS_BY_QUAL[D.a[r].qual];
     }
     return 0;
 }
 
-static int kind_of(rule_t *r, const char *owner, int64_t oid) {
+static int kind_of(rule_t *r, const char *owner, size_t on, int64_t oid) {
     if (oid >= 0 && oid < NN) {
         if (!r->memo) r->memo = xcalloc(NN, 1);
         if (r->memo[oid]) return r->memo[oid] == 1;
     }
-    int res = kind_direct(r->pat, owner, oid);
+    int res = kind_direct(&r->glob, owner, on, oid);
     if (!res && oid >= 0 && oid < NN) {
         CSR_FOR(INC_BY_RES, (uint32_t) oid, k) {
             uint32_t cls = INC.a[k].cls;
-            if (kind_direct(r->pat, S(cls), cls)) {
+            if (kind_direct(&r->glob, S(cls), SLEN(cls), cls)) {
                 res = 1;
                 break;
             }
@@ -120,7 +122,7 @@ int rule_matches(rule_t *r, uint32_t i) {
     int meth = is_meth(d->kind);
     if (r->pub && meth && d->vis != V_PUBLIC) return 0;
     const char *q = S(d->qual);
-    if (r->type == RULE_PAT) return !fnmatch(r->pat, q, 0);
+    if (r->type == RULE_PAT) return glob_match(&r->glob, q, SLEN(d->qual));
     if (r->type != RULE_KIND) return 0;
     size_t on = SLEN(d->qual);
     if (meth) {
@@ -140,7 +142,7 @@ int rule_matches(rule_t *r, uint32_t i) {
     char *owner = on < sizeof stackbuf ? stackbuf : xrealloc(NULL, on + 1);
     memcpy(owner, q, on);
     owner[on] = 0;
-    int res = kind_of(r, owner, find_name(owner, on));
+    int res = kind_of(r, owner, on, find_name(owner, on));
     if (owner != stackbuf) free(owner);
     return res;
 }
@@ -180,7 +182,7 @@ void prepare_roots(void) {
     for (size_t f = 0; f < FILES.n; f++) {
         FILE_PATH_RULE[f] = -1;
         for (size_t r = 0; r < RULES.n; r++)
-            if (RULES.a[r].type == RULE_PATH && !fnmatch(RULES.a[r].pat, FILES.a[f], 0)) {
+            if (RULES.a[r].type == RULE_PATH && glob_match(&RULES.a[r].glob, FILES.a[f], strlen(FILES.a[f]))) {
                 FILE_PATH_RULE[f] = (int32_t) r;
                 break;
             }

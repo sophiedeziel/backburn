@@ -41,10 +41,20 @@ vendor/prism/include/prism/ast.h:
 
 -include $(OBJS:.o=.d)
 
-test: backburn
+# glob_match must agree with fnmatch on every pattern (test/glob_test.c).
+$(BUILD)/glob_test: test/glob_test.c src/core/glob.c src/core/glob.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -D_DARWIN_C_SOURCE -Isrc -o $@ test/glob_test.c src/core/glob.c
+
+test: backburn $(BUILD)/glob_test
+	$(BUILD)/glob_test
 	sh test/run.sh
+
+# Times scans of pinned public codebases; BASE=<binary> also times it and compares reports.
+bench: backburn
+	ruby scripts/bench.rb ./backburn $(BASE)
 
 clean:
 	rm -rf $(BUILD) backburn backburn.dSYM
 
-.PHONY: test clean
+.PHONY: test bench clean
