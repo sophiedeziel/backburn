@@ -81,3 +81,49 @@ jobs:
           name: gem-${{ matrix.platform }}
           path: pkg/*.gem
           if-no-files-found: error
+
+  # Installs each gem the way a user would, on a clean runner or container,
+  # then runs the installed command (test/smoke.sh).
+  smoke:
+    name: smoke ${{ matrix.gem }} on ${{ matrix.image || matrix.runner }}
+    needs: [source, linux, darwin]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The source gem compiles on install: gcc and make in Debian,
+          # Apple clang and make 3.81 on macOS.
+          - { gem: ruby, artifact: gem-ruby, runner: ubuntu-24.04, image: "ruby:3.4" }
+          - { gem: ruby, artifact: gem-ruby, runner: macos-15 }
+          # Platform gems, in images without a compiler. Debian 10 (glibc 2.28)
+          # and Ruby 2.7 check the static binary on an old distro.
+          - { gem: x86_64-linux, artifact: gem-x86_64-linux, runner: ubuntu-24.04, image: "ruby:2.7-slim" }
+          - { gem: x86_64-linux-musl, artifact: gem-x86_64-linux, runner: ubuntu-24.04, image: "ruby:3.4-alpine" }
+          - { gem: aarch64-linux, artifact: gem-aarch64-linux, runner: ubuntu-24.04-arm, image: "ruby:3.4-slim" }
+          - { gem: aarch64-linux-musl, artifact: gem-aarch64-linux, runner: ubuntu-24.04-arm, image: "ruby:3.4-alpine" }
+          - { gem: arm64-darwin, artifact: gem-arm64-darwin, runner: macos-15 }
+          - { gem: x86_64-darwin, artifact: gem-x86_64-darwin, runner: macos-15-intel }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.artifact }}
+          path: pkg
+      - if: ${{ !matrix.image }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - name: Install and run
+        env:
+          GEM_PLATFORM: ${{ matrix.gem }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          if [ "$GEM_PLATFORM" = ruby ]; then gem=$(ls pkg/backburn-*.gem); else gem=$(ls pkg/backburn-*-"$GEM_PLATFORM".gem); fi
+          if [ -n "$IMAGE" ]; then
+            docker run --rm -v "$PWD:/src" -w /src "$IMAGE" sh test/smoke.sh "$gem"
+          else
+            export GEM_HOME="$RUNNER_TEMP/gems"
+            export PATH="$GEM_HOME/bin:$PATH"
+            sh test/smoke.sh "$gem"
+          fi
