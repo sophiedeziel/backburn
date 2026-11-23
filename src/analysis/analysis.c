@@ -46,6 +46,7 @@ void analyse(void) {
     prepare_roots();
     mark();
     mark_namespaces();
+    mark_uncertain();
     classify();
     uint32_t *order = xcalloc(FILES.n + 1, sizeof *order);
     for (uint32_t f = 0; f < FILES.n; f++) order[f] = f;

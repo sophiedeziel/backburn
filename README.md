@@ -32,9 +32,10 @@ The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COM
   - JSON and SARIF are valid (parsed with Ruby)
   - `--fail-on any` exits 1
   - an unknown option exits 2
-- 2 regression cases in `test/cases/`:
+- 3 regression cases in `test/cases/`:
   - `self_superclass`: `class Admin::Thing < ::Thing`
   - `haml_slim`: HAML and Slim views
+  - `uncertain_send`: `send(name)` on self makes methods uncertain, not dead (scan, `explain` and JSON)
 
 ## Quick start
 
@@ -290,6 +291,16 @@ Dynamic dispatch that may hide callers (2)
 
 Interpolated names with enough fixed text, such as `send("format_#{kind}")`, are matched as patterns (`format_*`) instead of being listed.
 
+**Uncertain.** A fully computed `send(name)` on self (no receiver, or `self.`) may call any method of the class it is written in, so Backburn doesn't call those methods dead. It lists them, and any dead code only they reach, in their own section:
+
+```
+Uncertain: a computed send may reach these (2)
+  lib/dispatcher.rb:6    method   Dispatcher#start  ← send(<computed>) lib/dispatcher.rb:3
+  lib/exporter.rb:6      method   Exporter#csv  ← public_send(<computed>) lib/exporter.rb:3
+```
+
+`public_send`, `try` and `public_method` only reach public methods. A send in an instance method only reaches instance methods, and one in `def self.x` only reaches class methods. A send inside dead code makes nothing uncertain. Uncertain code is never a candidate: it stays out of batches, baselines and `--fail-on`. Before deleting one, check which names the send can receive; `backburn explain NAME` shows the path through the send.
+
 **Batches.** `backburn batches` joins dead definitions connected by references or containment (a dead class and its methods, reopenings of the same class). No live code reaches a batch and no reference crosses between batches, so you can delete any one batch on its own and the rest stay valid. Batches are ordered untested first, then largest. Each batch is a natural size for one pull request. `--untested` shows only batches no test names, and `--max-lines N` caps their size.
 
 ## Gems
@@ -381,7 +392,7 @@ The SARIF output defines one rule per reason (`backburn/unreferenced`, `backburn
 Backburn resolves every call by name and errs on the side of keeping code alive. Its findings are precise, but it misses some dead code. Know these limits before you delete anything:
 
 - **Name-based matching.** A call `x.content` reaches every method named `content` in the codebase. One live `content` call keeps every `content` alive, so chains stop at the first common name. Generated methods (associations, scopes, `enum`, `define_method`) have no `def`, but their names still keep same-named hand-written methods alive.
-- **Metaprogramming it can't follow.** Fully computed `send`/`public_send`/`constantize`, code assembled in strings outside `class_eval`, and methods another gem calls by convention without `super` all look dead. The first kind is listed under dynamic dispatch. The others need a roots pattern.
+- **Metaprogramming it can't follow.** Fully computed `send`/`public_send`/`constantize`, code assembled in strings outside `class_eval`, and methods another gem calls by convention without `super` all look dead. The first kind is listed under dynamic dispatch; when it is a send on self, the methods it may reach are listed as uncertain instead of dead. A send on another object, or one that reaches a superclass, subclass or mixin, still leaves its targets looking dead. The other kinds need a roots pattern.
 - **"Not wired yet" looks like dead.** Code merged yesterday for a feature that isn't connected yet is indistinguishable from abandoned code. Check `git log` before deleting.
 - **Broad roots hide dead code.** A rule like `< Avo::*` or `path:config/*` makes everything it matches live.
 - **No type inference, no runtime tracing.** Cross-check with production coverage (Coverband, `Coverage.setup(oneshot_lines: true)`) before large deletions.
@@ -402,13 +413,13 @@ After the fixes above, 167 candidates remain, and hand checks found most of them
 
 ## Status
 
-**Acceptance.** On the spec's three real codebases, the binary reproduces the spec's file, definition, candidate and batch counts exactly:
+**Acceptance.** On the spec's three real codebases, the binary reproduces the spec's file, definition, candidate and batch counts exactly. On Rails, the uncertain bucket moved 2 candidates (and 2 batches) out of the earlier 65 and 46:
 
 | Codebase | Commit | Candidates | Batches | Time |
 | --- | --- | --- | --- | --- |
 | rubygems.org | `6f51e32` | 35 | 25 | about 0.15 s |
 | Tentacles | `0ddf4da` | 32 | 21 | about 0.07 s |
-| Rails | `443726c` | 65 | 46 | about 0.37 s |
+| Rails | `443726c` | 63, plus 2 uncertain | 44 | about 0.38 s |
 
 **Not implemented yet.** [docs/cli-and-outputs.md](docs/cli-and-outputs.md) describes a local `.backburn/` directory with a parse cache and `.backburn/last.json` for `explain` to reuse. Neither exists yet. Every run parses the project from scratch, which takes well under a second even on Rails.
 

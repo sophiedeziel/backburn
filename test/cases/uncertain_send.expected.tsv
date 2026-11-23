@@ -1,0 +1,8 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+class:Other	class	Other	lib/dispatcher.rb	18	20	unreferenced	0	1
+method:Other#lonely	method	Other#lonely	lib/dispatcher.rb	19	19	unreferenced	0	1
+method:Factory#gadget	method	Factory#gadget	lib/dispatcher.rb	25	25	unreferenced	0	4
+method:Exporter#secret	method	Exporter#secret	lib/exporter.rb	10	10	unreferenced	0	5
+method:Reporter#legacy	method	Reporter#legacy	lib/reporter.rb	4	6	unreferenced	0	2
+method:Reporter#summary	method	Reporter#summary	lib/reporter.rb	8	8	unreferenced	0	6
+method:Reporter#forward	method	Reporter#forward	lib/reporter.rb	10	12	unreferenced	0	3

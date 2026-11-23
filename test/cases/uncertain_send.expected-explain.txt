@@ -1,0 +1,6 @@
+Config::DEFAULTS is uncertain: a computed send may reach it  (lib/dispatcher.rb:15)
+  root   <load time>         code outside any method runs when its file loads
+  calls  Dispatcher#run      main.rb:1
+  maybe  Dispatcher#prepare  lib/dispatcher.rb:3  send(<computed>)
+  calls  Config::DEFAULTS    lib/dispatcher.rb:11
+  not reported as dead; check which names the send can receive before deleting it

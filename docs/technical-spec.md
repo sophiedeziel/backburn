@@ -101,7 +101,7 @@ Two more fields on every definition:
 
 - `test_refs`: references made from test files, kept apart; they never mark anything.
 - `includes`: one record per `include` / `prepend` / `extend` with a constant argument: `{class qual, module as written, outer namespace, resolved module def}`.
-- `dyn_sites`: `{file, line, what}` for every reflective call whose target can't be read, e.g. `send(<computed>)`.
+- `dyn_sites`: `{file, line, what}` for every reflective call whose target can't be read, e.g. `send(<computed>)`. A send-like call on self (`send`, `__send__`, `public_send`, `try`, `try!`, `method`, `public_method`, with no receiver or `self.`) written inside a class or module also records `{self_ns, owner def, public_only, self_kind}` for the uncertain pass (Marking and classification). `self_kind` is the kind of the enclosing def (`K_METHOD` or `K_SMETHOD`), or unknown in a class body or a block outside any def.
 - `files`: relative paths, in walk order.
 
 Added for metaprogramming, batches and speed:
@@ -222,19 +222,20 @@ Why inheritance matters: on rubygems.org, name patterns alone left 1169 candidat
 
 ## Marking and classification
 
-After all files are indexed, analysis runs in four steps.
+After all files are indexed, analysis runs in five steps.
 
 1. **Build name indexes.** Two arrays indexed by interned name id: `by_meth[name]` lists method defs (`K_METHOD`, `K_SMETHOD`), `by_const[name]` lists class, module and constant defs. A reference `{name, is_const}` targets `by_const[name]` or `by_meth[name]`: every definition with that name, in any class.
 2. **Index classes and resolve mixins** (see Roots).
 3. **Mark (Trémaux).** Push `<load time>` and every root on an explicit stack, marking each `live`. Pop a def; for each of its references, for each target not yet live, mark it live and push it. Each def is chalked once, so the walk is linear in definitions plus reference edges.
-4. **Classify.**
+4. **Mark uncertain.** A fully computed send on self may call any method of the class it is written in, so those methods are not called dead. Seed a second walk from every live def that makes such a send (`dyn_sites` with `self_ns`): mark each still-dead method of `self_ns` as uncertain (`live = LIVE_MAYBE`), keeping only public ones for `public_send`, `try`, `try!` and `public_method`, and only instance methods (or only class methods) when `self_kind` says which. Then walk from uncertain defs exactly as in step 3, over what is still dead: their dead targets become uncertain, and so do the methods their own self-sends may reach. Sends in dead code start nothing, because dead code never runs. Last, a dead class or module holding an uncertain class, module or constant becomes uncertain, as in mark namespaces. Uncertain defs are truthy for every `live` test, so they never become candidates, batch members, baseline entries or `--fail-on` failures; the report lists them in their own section, each with the send that reaches it.
+5. **Classify.**
    1. For every reference edge from `d` to `t` with `t ≠ d`, add 1 to `t.in_live` if `d` is live, else to `t.in_dead`.
    2. Build two flags arrays from `test_refs` (method names, constant names) and set `test_ref` on each def whose name appears there.
    3. For each def that is not live: `in_dead == 0` → `R_NEVER`; otherwise run a search from it over dead defs only. If it gets back to itself through another def, `R_CYCLE`; else `R_DEAD_ONLY`. Use a generation-stamped visited array so each search costs only the dead subgraph it touches.
 
-The full order in `main` is: walk and index, build name indexes, **expand name patterns**, index classes and modules, resolve and index mixins, mark, **mark namespaces** (Roots), classify, then report, or build batches with `--batches`.
+The full order in `main` is: walk and index, build name indexes, **expand name patterns**, index classes and modules, resolve and index mixins, mark, **mark namespaces** (Roots), mark uncertain, classify, then report, or build batches with `--batches`.
 
-A candidate is any def with `reason ≠ R_LIVE`, except `<load time>`. The “referenced only by tests” count in the report is the number of candidates with `test_ref` set; it overlaps the other three groups rather than being a fourth exclusive group.
+A candidate is any def with `reason ≠ R_LIVE` and `reason ≠ R_UNCERTAIN`, except `<load time>`. The “referenced only by tests” count in the report is the number of candidates with `test_ref` set; it overlaps the other three groups rather than being a fourth exclusive group.
 
 Two consequences worth keeping:
 
@@ -275,6 +276,8 @@ No `DIR` prints the usage line and exits 2. Candidates are sorted by file, then 
 2. `Dead code candidates: N of N definitions (N methods)`, then one line of counts: never referenced · only reached from dead code · in dead cycles · referenced only by tests.
 3. One section per non-empty reason: `Never referenced (N)`, `Only reached from other dead code (N)`, `Dead cycles (they only call each other) (N)`. Each line: `file:line` padded to 48, kind padded to 8, qualified name, `   [tests] ` if tagged, and for the last two sections `  ← ` plus up to three dead callers' qualified names.
 4. `Dynamic dispatch that may hide callers (N sites)`: the first 15 as `file:line  what(<computed>)`, then `… and N more`.
+
+The `scan` subcommand adds an `Uncertain: a computed send may reach these (N)` section before the dynamic dispatch sites, and ` · N uncertain` to the counts line when N > 0. Each line: `file:line`, kind, qualified name, `[tests]` if tagged, and `← what(<computed>) file:line` for the send that reaches it.
 
 Kind words: `method` (instance and singleton), `class`, `module`, `constant`.
 
@@ -619,7 +622,7 @@ lib/workers/cleanup_worker.rb	14	method	Trimmer#unused_trim	never_referenced	0
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | rubygems/rubygems.org | `6f51e32` | `--roots rails.roots` + `rubygems.roots`, `--inflect` | 1700 | 4223 | 35 in 25 batches | 0.15–0.25 s | 35 correct; both earlier false positives (`Links#download_uri`, `Gemcutter::Markdown`) are gone |
 | sophiedeziel/tentacles | `0ddf4da` | `--roots rails.roots`, `--inflect` | 490 | 1675 | 32 in 21 batches | 0.05–0.1 s | 32 correct: 1 probably dead, 3 small unused API, 16 not wired yet, 12 test double |
-| rails/rails | `443726c` | `--public-api --roots samples/rails-framework.roots` | 4237 | 22,398 | 65 in 46 batches | 0.5–0.9 s | 8 unreferenced, 24 internal and used only by tests, 21 test helpers shipped in `lib/`, 12 false positives (10 hooks other gems call, 2 code assembled in strings) |
+| rails/rails | `443726c` | `--public-api --roots samples/rails-framework.roots` | 4237 | 22,398 | 63 in 44 batches, plus 2 uncertain | 0.5–0.9 s | before the uncertain bucket, 65 in 46: 8 unreferenced, 24 internal and used only by tests, 21 test helpers shipped in `lib/`, 12 false positives (10 hooks other gems call, 2 code assembled in strings). The bucket moved `SchemaStatements#remove_constraint` (behind `send(command, …)`) and `MigrationContext#needs_migration?` (behind `public_send(direction, …)`) out of the candidates |
 
 Smoke tests that the roots logic is doing the work: rubygems.org with no roots file gives 931 candidates, and Rails with no options gives 972.
 
@@ -632,7 +635,7 @@ The tool fails in two directions, and they need different fixes.
 | Name collisions: a call reaches every method with that name | missed dead code | one live `.content` call keeps every `content` alive |
 | Broad roots (`< Avo::*`, `path:config/*`) | missed dead code | dead code inside admin resources is never reported |
 | Generated methods (`define_method`, associations, scopes, `enum`) have no `def` | missed dead code, never a false alarm | a generated `status` keeps a hand-written `status` alive |
-| Computed names with no fixed text: `send(name)`, `public_send(a + b)`, `constantize` on a variable | false positives | the site is listed under dynamic dispatch; names with 3+ fixed characters are now matched as patterns |
+| Computed names with no fixed text: `send(name)`, `public_send(a + b)`, `constantize` on a variable | false positives | the site is listed under dynamic dispatch; names with 3+ fixed characters are now matched as patterns; a send on self makes its class's dead methods uncertain instead of dead, but a send on another receiver, or one that reaches a superclass, a subclass or a mixin, still reports its targets as dead |
 | Code assembled in strings outside `class_eval` (`batch << "def x"`, template handlers) | false positives | Rails' `TagBuilder#self_closing_tag_string`, `DelegationError.nil_target` |
 | Methods another gem calls by convention, without `super` | false positives | Erubi/Herb `add_text`, Rack's `write_session`, Thor's `on_conflict_behavior` |
 | Name-matched cycles | wrong bucket | `A#build` calls `X.build`, matched back to itself; reported as a cycle |
@@ -640,10 +643,13 @@ The tool fails in two directions, and they need different fixes.
 
 **Next steps, cheapest first:**
 
-1. **The CLI redesign** in [Backburn — CLI and outputs](cli-and-outputs.md): subcommands, `explain` (needs one parent edge per definition during marking), JSON and SARIF, baselines, presets compiled into the binary.
-2. **An “uncertain” bucket.** Targets of a fully computed `send` in the same class go there instead of being called dead.
-3. **Age as a feature.** Join each candidate and batch with `git log -1` for its lines. Dead plus recent plus tested means in progress; dead and untouched for months means delete. This is the input the ID3 triage idea needs.
-4. **Production coverage as a cross-check.** Ruby's `Coverage.setup(oneshot_lines: true)` or Coverband records what actually ran. Dead in both is safe to delete; dead only here usually means hidden metaprogramming, which is how to grow the roots file.
-5. **Fold `gem_usage.rb` into the binary** as `backburn gems`: run `bundle exec ruby -e` once for each gem's source path, then index those paths with Prism like the app.
+1. **Age as a feature.** Join each candidate and batch with `git log -1` for its lines. Dead plus recent plus tested means in progress; dead and untouched for months means delete. This is the input the ID3 triage idea needs.
+2. **Production coverage as a cross-check.** Ruby's `Coverage.setup(oneshot_lines: true)` or Coverband records what actually ran. Dead in both is safe to delete; dead only here usually means hidden metaprogramming, which is how to grow the roots file.
+3. **The local `.backburn/` folder** from [Backburn — CLI and outputs](cli-and-outputs.md): a parse cache and `.backburn/last.json` for `explain` to reuse. Every run parses from scratch today, in well under a second even on Rails, so this is the least pressing.
 
-Done since the first version: string literals shaped like method names count as references, and interpolated names are matched as patterns.
+Done since the first version:
+
+- String literals shaped like method names count as references, and interpolated names are matched as patterns.
+- The CLI redesign in [Backburn — CLI and outputs](cli-and-outputs.md): subcommands, `explain`, JSON and SARIF, baselines, and presets compiled into the binary.
+- `gem_usage.rb` folded into the binary as `backburn gems`.
+- The uncertain bucket: methods a fully computed send on self may call, and dead code only they reach, are listed as uncertain instead of dead (Marking and classification, step 4).
