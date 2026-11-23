@@ -1,0 +1,56 @@
+# Publishes every gem to rubygems.org when a v* tag is pushed, with trusted
+# publishing: rubygems.org trades the job's OIDC token for a short-lived API
+# key, so no secret is stored here. See "Releasing" in the README.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: tag matches version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          version=$(sed -n 's/^ *VERSION *= *"\([^"]*\)".*/\1/p' lib/backburn/version.rb)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $version in lib/backburn/version.rb"
+            exit 1
+          fi
+
+  # Builds the source gem and every platform gem, and smoke-tests each.
+  gems:
+    needs: version
+    uses: ./.github/workflows/gems.yml
+
+  publish:
+    needs: gems
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gem-*
+          path: pkg
+          merge-multiple: true
+      - name: Check that all seven gems are there
+        run: |
+          ls -l pkg
+          test "$(ls pkg/*.gem | wc -l)" -eq 7
+      - uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+      # Platform gems first, so that while the push runs nobody on a supported
+      # platform gets the new source gem and has to compile it.
+      - name: Push to rubygems.org
+        run: |
+          for gem in pkg/backburn-*-*.gem; do gem push "$gem"; done
+          gem push pkg/backburn-"${GITHUB_REF_NAME#v}".gem

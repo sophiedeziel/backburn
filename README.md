@@ -6,67 +6,13 @@ The algorithm is Trémaux's maze rule: walk every passage from the entrance and 
 
 Backburn only reports. It never deletes or edits your code.
 
-## Build
-
-Requirements:
-
-- a C compiler (`cc`, clang or gcc) and `make`
-- `git`, to fetch Prism
-- Ruby, **at build time only**: Prism generates part of its C source from Ruby templates. The `backburn` binary itself needs no Ruby.
-
-```sh
-make        # fetches the pinned Prism commit into vendor/prism, builds libprism.a, then backburn
-make test   # runs the checks in test/ (test/run.sh)
-```
-
-The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COMMIT`) and builds its static library. It then compiles `src/` into `build/` (object files plus the generated `build/presets.h` and `build/version.h`) and links `./backburn`. Prism's C API changed in 2026, so stick to that commit unless you also update the sources. The result is one self-contained executable with the presets compiled in. Copy it anywhere on your `PATH`. `make clean` removes the build output.
-
-`make test` runs `test/run.sh`, which has 11 checks:
-
-- 9 checks against `test/fixture/`:
-  - the legacy `--tsv` output matches the spec's `expected.tsv`
-  - `scan --format tsv` output
-  - the five presets give `rails.roots`' result
-  - `batches --format tsv` output
-  - `explain` text
-  - JSON and SARIF are valid (parsed with Ruby)
-  - `--fail-on any` exits 1
-  - an unknown option exits 2
-- 3 regression cases in `test/cases/`:
-  - `self_superclass`: `class Admin::Thing < ::Thing`
-  - `haml_slim`: HAML and Slim views
-  - `uncertain_send`: `send(name)` on self makes methods uncertain, not dead (scan, `explain` and JSON)
-
-### The source gem
-
-`gem install` can't count on git or a network, so the gem carries Prism's C sources, already generated at `PRISM_COMMIT`, in `ext/backburn/prism/`. When that directory exists, `make` builds Prism from it and needs neither git nor Ruby. Otherwise it fetches Prism into `vendor/prism` as above.
-
-```sh
-rake vendor:prism   # copies Prism's generated sources at PRISM_COMMIT into ext/backburn/prism (ignored by git)
-rake build          # runs vendor:prism, then builds pkg/backburn-VERSION.gem
-```
-
-On `gem install`, `ext/backburn/extconf.rb` writes a Makefile that runs this repo's `make` inside the installed gem and moves the binary to `libexec/backburn`, where the `backburn` command runs it. A C compiler and `make` are all it needs.
-
-### Platform gems
-
-A platform gem carries a prebuilt binary, so most machines need no compiler. RubyGems picks the gem that matches the machine and falls back to the source gem.
-
-```sh
-rake native                                          # builds, runs make test, then packages pkg/backburn-VERSION-PLATFORM.gem for this machine
-rake native PLATFORM="x86_64-linux x86_64-linux-musl"  # one binary, one gem per listed platform
-```
-
-| Platform | Built on | Binary |
-| --- | --- | --- |
-| `x86_64-linux`, `x86_64-linux-musl` | Alpine, x86_64 | static (musl), so it runs on any glibc or musl Linux |
-| `aarch64-linux`, `aarch64-linux-musl` | Alpine, Arm64 | static (musl) |
-| `arm64-darwin` | macOS, Apple silicon | macOS 11 and later, ad-hoc signed by the linker |
-| `x86_64-darwin` | macOS, Intel | macOS 11 and later |
-
-`.github/workflows/gems.yml` builds the source gem and all six platform gems on every pull request. Windows isn't supported.
-
 ## Quick start
+
+```sh
+gem install backburn
+```
+
+On Linux (x86_64 or aarch64, glibc or musl) and macOS (Apple silicon or Intel), RubyGems installs a gem with a precompiled binary, so no compiler is needed. Anywhere else, it installs the source gem, which compiles Backburn during the install and only needs a C compiler and `make`. To build from a checkout instead, see [Building from source](#building-from-source).
 
 In the root of a Rails app:
 
@@ -407,6 +353,7 @@ When baseline entries are no longer dead, `scan` prints a hint to rerun `--write
 GitHub Actions, with dead code shown as annotations on pull requests:
 
 ```yaml
+- run: gem install backburn
 - run: backburn scan --format sarif --output backburn.sarif --fail-on new
 - uses: github/codeql-action/upload-sarif@v3
   if: always()
@@ -466,6 +413,79 @@ The original flags still work for one release and print a deprecation warning on
 
 `--tsv` keeps the old column layout (`file`, `line`, `kind`, `name`, `reason`, `only_in_tests`) and old reason names (`never_referenced`, `only_dead_callers`, `dead_cycle`). `--format tsv` uses the new columns and reason names.
 
+## Building from source
+
+For contributors, or to run Backburn from a checkout. Requirements:
+
+- a C compiler (`cc`, clang or gcc) and `make`
+- `git`, to fetch Prism
+- Ruby, **at build time only**: Prism generates part of its C source from Ruby templates. The `backburn` binary itself needs no Ruby.
+
+```sh
+make        # fetches the pinned Prism commit into vendor/prism, builds libprism.a, then backburn
+make test   # runs the checks in test/ (test/run.sh)
+```
+
+The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COMMIT`) and builds its static library. It then compiles `src/` into `build/` (object files plus the generated `build/presets.h` and `build/version.h`) and links `./backburn`. Prism's C API changed in 2026, so stick to that commit unless you also update the sources. The result is one self-contained executable with the presets compiled in. Copy it anywhere on your `PATH`. `make clean` removes the build output.
+
+`make test` runs `test/run.sh`, which has 11 checks:
+
+- 9 checks against `test/fixture/`:
+  - the legacy `--tsv` output matches the spec's `expected.tsv`
+  - `scan --format tsv` output
+  - the five presets give `rails.roots`' result
+  - `batches --format tsv` output
+  - `explain` text
+  - JSON and SARIF are valid (parsed with Ruby)
+  - `--fail-on any` exits 1
+  - an unknown option exits 2
+- 3 regression cases in `test/cases/`:
+  - `self_superclass`: `class Admin::Thing < ::Thing`
+  - `haml_slim`: HAML and Slim views
+  - `uncertain_send`: `send(name)` on self makes methods uncertain, not dead (scan, `explain` and JSON)
+
+### The source gem
+
+`gem install` can't count on git or a network, so the gem carries Prism's C sources, already generated at `PRISM_COMMIT`, in `ext/backburn/prism/`. When that directory exists, `make` builds Prism from it and needs neither git nor Ruby. Otherwise it fetches Prism into `vendor/prism` as above.
+
+```sh
+rake vendor:prism   # copies Prism's generated sources at PRISM_COMMIT into ext/backburn/prism (ignored by git)
+rake build          # runs vendor:prism, then builds pkg/backburn-VERSION.gem
+```
+
+On `gem install`, `ext/backburn/extconf.rb` writes a Makefile that runs this repo's `make` inside the installed gem and moves the binary to `libexec/backburn`, where the `backburn` command runs it. A C compiler and `make` are all it needs.
+
+### Platform gems
+
+A platform gem carries a prebuilt binary, so most machines need no compiler. RubyGems picks the gem that matches the machine and falls back to the source gem.
+
+```sh
+rake native                                          # builds, runs make test, then packages pkg/backburn-VERSION-PLATFORM.gem for this machine
+rake native PLATFORM="x86_64-linux x86_64-linux-musl"  # one binary, one gem per listed platform
+```
+
+| Platform | Built on | Binary |
+| --- | --- | --- |
+| `x86_64-linux`, `x86_64-linux-musl` | Alpine, x86_64 | static (musl), so it runs on any glibc or musl Linux |
+| `aarch64-linux`, `aarch64-linux-musl` | Alpine, Arm64 | static (musl) |
+| `arm64-darwin` | macOS, Apple silicon | macOS 11 and later, ad-hoc signed by the linker |
+| `x86_64-darwin` | macOS, Intel | macOS 11 and later |
+
+`.github/workflows/gems.yml` builds the source gem and all six platform gems on every pull request. It then installs each one on a clean runner or container (the Linux platform gems in images with no compiler) and runs `test/smoke.sh`: `backburn --version`, `backburn scan test/fixture` and the whole of `test/run.sh` against the installed command. Windows isn't supported.
+
+### Releasing
+
+1. Bump `VERSION` in `lib/backburn/version.rb` and merge it.
+2. Tag that commit `v` plus the version, for example `git tag v0.2.0 && git push origin v0.2.0`.
+
+The tag starts `.github/workflows/release.yml`, which:
+
+- checks that the tag matches the version
+- builds and smoke-tests every gem with `gems.yml`
+- pushes the platform gems, then the source gem, to rubygems.org
+
+It publishes with [trusted publishing](https://guides.rubygems.org/trusted-publishing/), so no API key is stored in GitHub.
+
 ## Repository layout
 
 | Path | What |
@@ -478,7 +498,8 @@ The original flags still work for one release and print a deprecation warning on
 | `src/output/` | `report` (text, TSV, JSON, SARIF), `baseline` |
 | `src/commands/` | `scan`, `explain`, `roots`, `gems`, `gemfile`, `init`, `commands.h` |
 | `presets/*.roots` | the built-in presets, compiled into the binary |
-| `test/` | `run.sh` (what `make test` runs), `fixture/` (one rule per file, plus expected outputs), `cases/` (regression cases) |
+| `test/` | `run.sh` (what `make test` runs), `fixture/` (one rule per file, plus expected outputs), `cases/` (regression cases), `smoke.sh` (installs a gem and checks the installed command) |
+| `.github/workflows/` | `gems.yml` (builds and smoke-tests every gem), `release.yml` (publishes them on a `v*` tag) |
 | `docs/` | `technical-spec.md` (algorithm, rules, known limits), `cli-and-outputs.md` (CLI, formats, config, exit codes) |
 | `exe/backburn` | the gem's executable: a Ruby wrapper that runs the native binary installed as `libexec/backburn` |
 | `lib/backburn/version.rb` | the version, the only place it is set |
