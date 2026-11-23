@@ -1,0 +1,10 @@
+# Entry points of the Rails framework itself, layered on --public-api.
+# Generators and commands are looked up by name (`rails generate model`, `rails server`),
+# and Thor runs every public method of a generator in order.
+< Rails::Generators::Base
+< Rails::Command::Base
+< Thor::Group
+< Thor
+# Bug-report templates and app templates are run as scripts.
+path:guides/*
+path:*/templates/*

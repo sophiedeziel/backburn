@@ -1,0 +1,6 @@
+# Preset `graphql`: GraphQL-ruby calls types, mutations, resolvers and scalars by convention.
+public < GraphQL::Schema
+public < GraphQL::Schema::*
+< GraphQL::Dataloader::Source
+*.resolve_type
+*#resolve_type

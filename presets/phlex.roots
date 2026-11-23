@@ -1,0 +1,7 @@
+# Preset `phlex`: view components (Phlex, ViewComponent).
+< Phlex::*
+< ViewComponent::Base
+*Component#view_template
+*Component#call
+*Component#before_template
+*Component#render?

@@ -1,0 +1,79 @@
+# Preset `rails`: entry points Rails and its common companions call by convention.
+
+# --- Rails core
+public < ActionController::Base
+public < ActionController::API
+public *Controller#*
+public < ActionMailer::Base
+< ActiveJob::Base
+< ActiveRecord::Migration
+< ActiveModel::*Validator
+< Rails::Application
+< Rails::Engine
+*Helper
+*Controller
+*Job
+*Mailer
+path:db/migrate/*
+path:db/seeds.rb
+path:config/*
+path:lib/tasks/*
+
+# --- errors are raised by class name, rescued by class name; their methods are hooks
+< StandardError
+< *Error
+< Exception
+
+# --- admin (Avo) and maintenance tasks
+< Avo::*
+public < MaintenanceTasks::Task
+
+# --- tests are roots for what they define (helpers, setup)
+path:test/*
+path:spec/*
+
+# --- hooks Rails and common gems call by name
+*.table_name_prefix
+*#to_xml
+*#as_json
+*#serializable_hash
+*.matches?
+*#matches?
+*#pundit_user
+*#append_info_to_payload
+*#search_data
+< ActiveModel::Type::*
+< ActiveRecord::Type::*
+< RuboCop::Cop::*
+
+# --- scripts are run by hand
+path:script/*
+path:bin/*
+
+# --- Ruby's own protocols: IO-like and conversion objects are called by the standard library
+*#readpartial
+*#read
+*#write
+*#to_str
+*#to_ary
+*#to_proc
+*#coerce
+*#respond_to_missing?
+
+# --- Action Cable
+public < ActionCable::Channel::Base
+< ActionCable::Connection::Base
+
+# --- ActiveModel class-level hooks
+*.human_attribute_name
+*.model_name
+
+# --- Action Mailbox: Rails names ApplicationMailbox and routes to its subclasses
+< ActionMailbox::Base
+
+# --- protocols Rails calls on your objects: `render item`, table-name prefixes on namespace modules
+*#to_partial_path
+*.to_partial_path
+*#table_name_prefix
+*.table_name_suffix
+*#table_name_suffix

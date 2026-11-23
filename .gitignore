@@ -1,0 +1,5 @@
+/vendor/
+/backburn
+/backburn.dSYM/
+/build/
+.backburn/

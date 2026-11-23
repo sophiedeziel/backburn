@@ -1,0 +1,14 @@
+-# a comment that mentions ghost_helper
+%h1= page_title
+.card{ class: card_class(@item), data: { id: item_id } }
+  - if show_badge?(@item)
+    %span.badge= badge_text
+  - else
+    = fallback_text
+  - @items.each do |item|
+    %li(title=item_title class="x #{interp_helper(item)}")= item_label(item)
+  %p Hello #{greeting_name}!
+  = link_to "Edit",
+    edit_path(@item)
+:javascript
+  var x = "#{js_helper}";

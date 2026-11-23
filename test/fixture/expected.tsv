@@ -1,0 +1,15 @@
+file	line	kind	name	reason	only_in_tests
+app/controllers/orders_controller.rb	15	method	OrdersController#unused_helper	never_referenced	0
+app/helpers/orders_helper.rb	6	method	OrdersHelper#unused_money	never_referenced	0
+app/models/order.rb	3	constant	Order::STATUSES	never_referenced	0
+app/models/order.rb	13	method	Order#legacy_total	never_referenced	0
+app/models/order.rb	17	method	Order#old_rounding	only_dead_callers	0
+app/models/order.rb	21	method	Order#ping	dead_cycle	0
+app/models/order.rb	25	method	Order#pong	dead_cycle	0
+app/models/order.rb	29	method	Order#tested_only	never_referenced	1
+app/models/order.rb	37	method	Order#dynamic_target	never_referenced	0
+lib/legacy_report.rb	1	class	LegacyReport	never_referenced	0
+lib/legacy_report.rb	2	method	LegacyReport#run	never_referenced	0
+lib/registry.rb	9	method	Registry.handle_tsv	never_referenced	0
+lib/visitor.rb	15	method	Visitor#leftover	never_referenced	0
+lib/workers/cleanup_worker.rb	14	method	Trimmer#unused_trim	never_referenced	0

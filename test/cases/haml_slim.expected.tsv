@@ -1,0 +1,4 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+module:H	module	H	h.rb	1	23	unreferenced	0	1
+method:H#ghost_helper	method	H#ghost_helper	h.rb	14	14	unreferenced	0	1
+method:H#ghost_slim	method	H#ghost_slim	h.rb	22	22	unreferenced	0	1
