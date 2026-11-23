@@ -11,7 +11,7 @@ SRCS := $(shell find src -name '*.c' | sort)
 OBJS := $(SRCS:src/%.c=$(BUILD)/%.o)
 
 backburn: $(OBJS) $(PRISM)/build/libprism.a
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(PRISM)/build/libprism.a -lm
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(PRISM)/build/libprism.a -lm
 
 $(BUILD)/%.o: src/%.c $(BUILD)/presets.h $(BUILD)/version.h | $(PRISM)/build/libprism.a
 	@mkdir -p $(dir $@)

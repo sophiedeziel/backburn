@@ -1,0 +1,83 @@
+# Builds the source gem and the precompiled platform gems, and uploads each
+# as an artifact named gem-*. The release workflow calls this one.
+name: Gems
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: source gem
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - run: rake build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-ruby
+          path: pkg/*.gem
+          if-no-files-found: error
+
+  # One static musl binary per CPU, built in Alpine. It runs on any Linux, so
+  # it goes in both the -linux gem (glibc) and the -linux-musl gem (Alpine).
+  linux:
+    name: ${{ matrix.arch }}-linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      # docker run rather than a job container: JavaScript actions can't run
+      # inside Alpine containers on Arm runners.
+      - name: Build in Alpine
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src alpine:3.22 sh -euc '
+            apk add --no-cache build-base git ruby-full
+            rake native PLATFORM="${{ matrix.arch }}-linux ${{ matrix.arch }}-linux-musl"
+            if readelf -d libexec/backburn | grep -q NEEDED; then echo "libexec/backburn is not static" >&2; exit 1; fi
+          '
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-${{ matrix.arch }}-linux
+          path: pkg/*.gem
+          if-no-files-found: error
+
+  darwin:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: arm64-darwin
+            runner: macos-15
+          - platform: x86_64-darwin
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - run: rake native PLATFORM=${{ matrix.platform }}
+      - name: Check the binary's minimum macOS
+        run: otool -l libexec/backburn | grep -A3 LC_BUILD_VERSION | grep -q "minos 11.0"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*.gem
+          if-no-files-found: error

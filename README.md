@@ -48,6 +48,24 @@ rake build          # runs vendor:prism, then builds pkg/backburn-VERSION.gem
 
 On `gem install`, `ext/backburn/extconf.rb` writes a Makefile that runs this repo's `make` inside the installed gem and moves the binary to `libexec/backburn`, where the `backburn` command runs it. A C compiler and `make` are all it needs.
 
+### Platform gems
+
+A platform gem carries a prebuilt binary, so most machines need no compiler. RubyGems picks the gem that matches the machine and falls back to the source gem.
+
+```sh
+rake native                                          # builds, runs make test, then packages pkg/backburn-VERSION-PLATFORM.gem for this machine
+rake native PLATFORM="x86_64-linux x86_64-linux-musl"  # one binary, one gem per listed platform
+```
+
+| Platform | Built on | Binary |
+| --- | --- | --- |
+| `x86_64-linux`, `x86_64-linux-musl` | Alpine, x86_64 | static (musl), so it runs on any glibc or musl Linux |
+| `aarch64-linux`, `aarch64-linux-musl` | Alpine, Arm64 | static (musl) |
+| `arm64-darwin` | macOS, Apple silicon | macOS 11 and later, ad-hoc signed by the linker |
+| `x86_64-darwin` | macOS, Intel | macOS 11 and later |
+
+`.github/workflows/gems.yml` builds the source gem and all six platform gems on every pull request. Windows isn't supported.
+
 ## Quick start
 
 In the root of a Rails app:
@@ -470,7 +488,7 @@ Other top-level files:
 
 - `backburn.gemspec` packages Backburn as a gem. It reads its version from `lib/backburn/version.rb`.
 - `Makefile` builds `src/` into `build/`. It builds Prism from `ext/backburn/prism` when that exists, and otherwise fetches it into `vendor/prism` (not committed). It also has the `test` and `clean` targets.
-- `Rakefile` has `vendor:prism` and `build`, which builds the source gem into `pkg/`.
+- `Rakefile` has `vendor:prism`, `build`, which builds the source gem into `pkg/`, and `native`, which builds a platform gem.
 - `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`, and `scripts/version-h.sh` generates `build/version.h` from `lib/backburn/version.rb`.
 - `rails.roots` is the spec's original roots file.
 - `samples/` holds example project roots files.
