@@ -1,0 +1,15 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+method:Order#legacy_total	method	Order#legacy_total	app/models/order.rb	13	15	unreferenced	0	1
+method:Order#old_rounding	method	Order#old_rounding	app/models/order.rb	17	19	dead-chain	0	1
+method:Order#ping	method	Order#ping	app/models/order.rb	21	23	dead-cycle	0	2
+method:Order#pong	method	Order#pong	app/models/order.rb	25	27	dead-cycle	0	2
+class:LegacyReport	class	LegacyReport	lib/legacy_report.rb	1	5	unreferenced	0	3
+method:LegacyReport#run	method	LegacyReport#run	lib/legacy_report.rb	2	4	unreferenced	0	3
+method:OrdersHelper#unused_money	method	OrdersHelper#unused_money	app/helpers/orders_helper.rb	6	8	unreferenced	0	4
+method:OrdersController#unused_helper	method	OrdersController#unused_helper	app/controllers/orders_controller.rb	15	15	unreferenced	0	5
+constant:Order::STATUSES	constant	Order::STATUSES	app/models/order.rb	3	3	unreferenced	0	6
+method:Order#dynamic_target	method	Order#dynamic_target	app/models/order.rb	37	37	unreferenced	0	7
+method:Registry.handle_tsv	method	Registry.handle_tsv	lib/registry.rb	9	9	unreferenced	0	8
+method:Visitor#leftover	method	Visitor#leftover	lib/visitor.rb	15	15	unreferenced	0	9
+method:Trimmer#unused_trim	method	Trimmer#unused_trim	lib/workers/cleanup_worker.rb	14	14	unreferenced	0	10
+method:Order#tested_only	method	Order#tested_only	app/models/order.rb	29	31	unreferenced	1	11

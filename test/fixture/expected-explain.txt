@@ -1,0 +1,4 @@
+Order#price_of is live  (app/models/order.rb:36)
+  root   OrdersController#show  public < ActionController::Base  (rails.roots:10)
+  calls  Order#total            app/controllers/orders_controller.rb:4
+  calls  Order#price_of         app/models/order.rb:10

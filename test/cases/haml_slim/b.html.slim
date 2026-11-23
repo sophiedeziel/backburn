@@ -1,0 +1,8 @@
+/ comment mentions ghost_slim
+h1 = slim_title
+a href=link_helper(item) class="btn #{btn_class}" = link_label
+- if slim_cond?
+  | Plain text #{slim_interp}
+p: span = nested_helper
+= form_with model: @m do |f|
+  = f.text_field :name
