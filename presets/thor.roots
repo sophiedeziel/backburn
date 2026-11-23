@@ -1,0 +1,3 @@
+# Preset `thor`: Thor runs every public method of a command or generator.
+public < Thor
+public < Thor::Group

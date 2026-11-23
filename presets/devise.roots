@@ -1,0 +1,11 @@
+# Preset `devise`: Devise calls these hooks on your controllers, often protected or private ones.
+< Devise::*Controller
+< DeviseController
+*Controller#after_sign_in_path_for
+*Controller#after_sign_out_path_for
+*Controller#after_sign_up_path_for
+*Controller#after_inactive_sign_up_path_for
+*Controller#after_update_path_for
+*Controller#after_confirmation_path_for
+*Controller#after_resetting_password_path_for
+*Controller#configure_permitted_parameters

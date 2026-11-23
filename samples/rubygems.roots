@@ -1,0 +1,3 @@
+# Project roots for rubygems/rubygems.org, layered after rails.roots.
+# An override of an importmap-rails helper, called from inside the gem.
+ApplicationHelper#javascript_inline_importmap_tag

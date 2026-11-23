@@ -1,0 +1,5 @@
+# Preset `fast-mcp`: MCP tools and resources are registered through `descendants`, never by name.
+< FastMcp::Tool
+< FastMcp::Resource
+< ActionTool::Base
+< ActionResource::Base

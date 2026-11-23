@@ -1,0 +1,4 @@
+# Preset `sidekiq`: background workers marked by a mixin rather than a superclass.
+< Shoryuken::Worker
+< Sidekiq::Job
+< Sidekiq::Worker

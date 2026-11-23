@@ -1,0 +1,99 @@
+# Entry points the framework calls by convention. This file is the tool's only Rails knowledge.
+#
+#   Pattern               matches a qualified name: Class#instance_method, Class.class_method, Namespace::Class
+#   public Pattern        only public methods
+#   < Superclass          every class that inherits (directly or not) from Superclass, and all its methods
+#   public < Superclass   ... and only its public methods
+#   path:glob             everything defined in matching files
+
+# --- Rails core
+public < ActionController::Base
+public < ActionController::API
+public *Controller#*
+public < ActionMailer::Base
+< ActiveJob::Base
+< ActiveRecord::Migration
+< ActiveModel::*Validator
+< Rails::Application
+< Rails::Engine
+*Helper
+*Controller
+*Job
+*Mailer
+path:db/migrate/*
+path:db/seeds.rb
+path:config/*
+path:lib/tasks/*
+
+# --- errors are raised by class name, rescued by class name; their methods are hooks
+< StandardError
+< *Error
+< Exception
+
+# --- view components (Phlex, ViewComponent)
+< Phlex::*
+< ViewComponent::Base
+*Component#view_template
+*Component#call
+*Component#before_template
+*Component#render?
+
+# --- authorization (Pundit)
+public < *ApplicationPolicy
+public < *ApplicationPolicy::Scope
+
+# --- admin (Avo) and maintenance tasks
+< Avo::*
+public < MaintenanceTasks::Task
+
+# --- tests are roots for what they define (helpers, setup)
+path:test/*
+path:spec/*
+
+# --- hooks Rails and common gems call by name
+*.table_name_prefix
+*#to_xml
+*#as_json
+*#serializable_hash
+*.matches?
+*#matches?
+*#pundit_user
+*#append_info_to_payload
+*#search_data
+< ActiveModel::Type::*
+< ActiveRecord::Type::*
+< RuboCop::Cop::*
+
+# --- background workers marked by a mixin rather than a superclass
+< Shoryuken::Worker
+< Sidekiq::Job
+< Sidekiq::Worker
+
+# --- scripts are run by hand
+path:script/*
+path:bin/*
+
+# --- Ruby's own protocols: IO-like and conversion objects are called by the standard library
+*#readpartial
+*#read
+*#write
+*#to_str
+*#to_ary
+*#to_proc
+*#coerce
+*#respond_to_missing?
+
+# --- Action Cable
+public < ActionCable::Channel::Base
+< ActionCable::Connection::Base
+
+# --- GraphQL-ruby: the schema calls types, mutations, resolvers and scalars by convention
+public < GraphQL::Schema
+public < GraphQL::Schema::*
+< GraphQL::Dataloader::Source
+*.resolve_type
+*#resolve_type
+
+# --- ActiveModel class-level hooks
+*.human_attribute_name
+*.model_name
