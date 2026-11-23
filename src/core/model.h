@@ -34,6 +34,9 @@ typedef VEC(def_t) def_vec;
 typedef struct { uint32_t name, file; uint8_t is_const; } tref_t;         /* test_refs + test_ref_files */
 /* include / prepend / extend; nest is Module.nesting inside the class, innermost first, newline-separated */
 typedef struct { uint32_t cls, mod; int32_t nest, res; } incl_t;
+/* `def Name.x` written inside a namespace: which class Name is can only be
+ * known once every file is indexed. nest is Module.nesting where the def is written. */
+typedef struct { uint32_t def, recv; int32_t nest; } srecv_t;
 /* Reflective calls we can't read. A send-like call on self (no receiver, or
  * `self.`) inside a class or module may call any method of that class. */
 typedef struct {
@@ -49,6 +52,7 @@ typedef struct { uint32_t file; char *req; } req_t;                       /* req
 typedef struct { uint32_t file, line; char *msg; } perr_t;                /* files Prism rejected */
 typedef VEC(tref_t) tref_vec;
 typedef VEC(incl_t) incl_vec;
+typedef VEC(srecv_t) srecv_vec;
 typedef VEC(dyn_t) dyn_vec;
 typedef VEC(pref_t) pref_vec;
 typedef VEC(req_t) req_vec;
@@ -59,6 +63,7 @@ extern strvec FILES;         /* relative paths, in walk order */
 extern u8vec FTEST, FTEMPLATE; /* per file: a test file; converted from ERB */
 extern tref_vec TR;          /* references made from test files: they never mark anything */
 extern incl_vec INC;         /* include / prepend / extend with a constant argument */
+extern srecv_vec SRECV;      /* def Name.x inside a namespace, placed after indexing */
 extern dyn_vec DYN;          /* reflective calls whose target can't be read */
 extern pref_vec PREF;        /* computed names (:"visit_#{x}"), expanded after indexing */
 extern req_vec REQ;          /* require "x", for the gems command */

@@ -12,6 +12,8 @@ tref_vec TR;
 
 incl_vec INC;
 
+srecv_vec SRECV;
+
 dyn_vec DYN;
 
 pref_vec PREF;

@@ -135,21 +135,22 @@ void expand_patterns(void) {
     free(cnames.a);
 }
 
-static int32_t lookup_cls(const char *s, size_t n) {
+/* by_qual maps the first nq qualified name ids to a class / module def, or -1. */
+static int32_t lookup_cls(const int32_t *by_qual, uint32_t nq, const char *s, size_t n) {
     int64_t id = find_name(s, n);
-    return id >= 0 && id < NN ? CLS_BY_QUAL[id] : -1;
+    return id >= 0 && id < nq ? by_qual[id] : -1;
 }
 
 /* A class is never its own superclass: `class Admin::Thing < ::Thing`
  * must not resolve ::Thing to Admin::Thing. */
-static int32_t lookup_other(const char *s, size_t n, int64_t self) {
-    int32_t r = lookup_cls(s, n);
+static int32_t lookup_other(const int32_t *by_qual, uint32_t nq, const char *s, size_t n, int64_t self) {
+    int32_t r = lookup_cls(by_qual, nq, s, n);
     return r >= 0 && (int64_t) D.a[r].qual == self ? -1 : r;
 }
 
 /* Ruby's constant lookup, without ancestors: Name in each scope of the nesting
  * (Module.nesting, innermost first, newline-separated), exactly, then at the top level. */
-static int32_t resolve(uint32_t name, int32_t nest, int64_t self) {
+static int32_t resolve(const int32_t *by_qual, uint32_t nq, uint32_t name, int32_t nest, int64_t self) {
     const char *nm = S(name);
     if (nest >= 0) {
         sbuf b = {0};
@@ -160,7 +161,7 @@ static int32_t resolve(uint32_t name, int32_t nest, int64_t self) {
             sb_put(&b, p, (size_t) (nl - p));
             sb_put(&b, "::", 2);
             sb_put(&b, nm, SLEN(name));
-            int32_t r = lookup_other(b.s, b.n, self);
+            int32_t r = lookup_other(by_qual, nq, b.s, b.n, self);
             if (r >= 0) {
                 free(b.s);
                 return r;
@@ -169,7 +170,40 @@ static int32_t resolve(uint32_t name, int32_t nest, int64_t self) {
         }
         free(b.s);
     }
-    return lookup_other(nm, SLEN(name), self);
+    return lookup_other(by_qual, nq, nm, SLEN(name), self);
+}
+
+/* `def Name.x` inside a namespace: look Name up like any constant, now that
+ * every file is indexed, and requalify the def by the class found, or by Name
+ * at the top level when no indexed class matches. Its self-sends move with it.
+ * Runs before the name indexes, so the new names are counted in NN. */
+void place_singleton_defs(void) {
+    if (!SRECV.n) return;
+    uint32_t nq = (uint32_t) I.n;
+    int32_t *by_qual = xcalloc(nq + 1, sizeof *by_qual);
+    for (uint32_t k = 0; k < nq; k++) by_qual[k] = -1;
+    for (size_t i = 0; i < D.n; i++)
+        if (D.a[i].kind == K_CLASS || D.a[i].kind == K_MODULE) by_qual[D.a[i].qual] = (int32_t) i;
+    uint32_t *placed = xcalloc(D.n, sizeof *placed); /* new owner + 1, per moved def */
+    sbuf b = {0};
+    for (size_t k = 0; k < SRECV.n; k++) {
+        const srecv_t *s = &SRECV.a[k];
+        def_t *d = &D.a[s->def];
+        int32_t r = resolve(by_qual, nq, s->recv, s->nest, -1);
+        uint32_t owner = r >= 0 ? D.a[r].qual : s->recv;
+        sb_trunc(&b, 0);
+        sb_put(&b, S(owner), SLEN(owner));
+        sb_putc(&b, '.');
+        sb_put(&b, S(d->name), SLEN(d->name));
+        d->qual = intern(b.s, b.n);
+        placed[s->def] = owner + 1;
+    }
+    /* every self-send owned by a moved def is in its body, where self is the receiver */
+    for (size_t j = 0; j < DYN.n; j++)
+        if (DYN.a[j].self_ns >= 0 && placed[DYN.a[j].owner]) DYN.a[j].self_ns = (int32_t) (placed[DYN.a[j].owner] - 1);
+    free(b.s);
+    free(placed);
+    free(by_qual);
 }
 
 void index_classes(void) {
@@ -185,12 +219,13 @@ void index_classes(void) {
     SUPER_DEF = xcalloc(D.n, sizeof *SUPER_DEF);
     for (size_t i = 0; i < D.n; i++) {
         SUPER_DEF[i] = -1;
-        if (D.a[i].kind == K_CLASS && D.a[i].super_ >= 0) SUPER_DEF[i] = resolve((uint32_t) D.a[i].super_, D.a[i].super_top ? -1 : D.a[i].outer, D.a[i].qual);
+        if (D.a[i].kind == K_CLASS && D.a[i].super_ >= 0)
+            SUPER_DEF[i] = resolve(CLS_BY_QUAL, NN, (uint32_t) D.a[i].super_, D.a[i].super_top ? -1 : D.a[i].outer, D.a[i].qual);
     }
 }
 
 void resolve_mixins(void) {
-    for (size_t i = 0; i < INC.n; i++) INC.a[i].res = resolve(INC.a[i].mod, INC.a[i].nest, -1);
+    for (size_t i = 0; i < INC.n; i++) INC.a[i].res = resolve(CLS_BY_QUAL, NN, INC.a[i].mod, INC.a[i].nest, -1);
     csr_build(&INC_BY_CLS, NN, INC.n, key_inc_cls, 0);
     csr_build(&INC_BY_RES, NN, INC.n, key_inc_res, 0);
 }

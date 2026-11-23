@@ -101,7 +101,8 @@ Two more fields on every definition:
 
 - `test_refs`: references made from test files, kept apart; they never mark anything.
 - `includes`: one record per `include` / `prepend` / `extend` with a constant argument: `{class qual, module as written, nesting inside the class, resolved module def}`.
-- `dyn_sites`: `{file, line, what}` for every reflective call whose target can't be read, e.g. `send(<computed>)`. A send-like call on self (`send`, `__send__`, `public_send`, `try`, `try!`, `method`, `public_method`, with no receiver or `self.`) written inside a class or module also records `{self_ns, owner def, public_only, self_kind}` for the uncertain pass (Marking and classification). `self_kind` is the kind of the enclosing def (`K_METHOD` or `K_SMETHOD`), or unknown in a class body or a block outside any def.
+- `dyn_sites`: `{file, line, what}` for every reflective call whose target can't be read, e.g. `send(<computed>)`. A send-like call on self (`send`, `__send__`, `public_send`, `try`, `try!`, `method`, `public_method`, with no receiver or `self.`) written inside a class or module, or inside `def Name.x`, also records `{self_ns, owner def, public_only, self_kind}` for the uncertain pass (Marking and classification). `self_ns` is the class self is: `Name` inside `def Name.x`, else the namespace. `self_kind` is the kind of the enclosing def (`K_METHOD` or `K_SMETHOD`), or unknown in a class body or a block outside any def.
+- `singleton_receivers`: `{def, receiver as written, nesting}` for each `def Name.x` written inside a namespace, placed after indexing (Indexing rules).
 - `files`: relative paths, in walk order.
 
 Added for metaprogramming, batches and speed:
@@ -114,14 +115,14 @@ Added for metaprogramming, batches and speed:
 
 ## Indexing rules
 
-One visitor callback handles every node; anything not listed returns `PM_VISIT_DESCEND`. Visitor state (`ctx_t`): parser, file index, `is_test`, current namespace string `ns` (e.g. `Admin::Reports`), `nest` (the scopes of `Module.nesting`, innermost first, newline-separated and interned, or -1 at top level), `singleton` flag, `cur` (the def that owns references, 0 = load time), `cur_name` (enclosing method name, for `super`), current default visibility `vis`, and `next_def_vis` (visibility for the next `def` only, or -1). In test files, definitions are not recorded and references go to `test_refs`.
+One visitor callback handles every node; anything not listed returns `PM_VISIT_DESCEND`. Visitor state (`ctx_t`): parser, file index, `is_test`, current namespace string `ns` (e.g. `Admin::Reports`), `nest` (the scopes of `Module.nesting`, innermost first, newline-separated and interned, or -1 at top level), `singleton` flag, `cur` (the def that owns references, 0 = load time), `self_q` (inside `def Name.x`, the class self is, else -1), `cur_name` (enclosing method name, for `super`), current default visibility `vis`, and `next_def_vis` (visibility for the next `def` only, or -1). In test files, definitions are not recorded and references go to `test_refs`.
 
 | Prism node | What it does |
 | --- | --- |
 | `ClassNode` | Visit the superclass expression first (it is a reference). Then enter the namespace (below) with kind `K_CLASS`. Return `SKIP`. |
 | `ModuleNode` | Enter the namespace with kind `K_MODULE`. Return `SKIP`. |
 | `SingletonClassNode` (`class << self`) | Set `singleton = 1`, reset visibility to public, visit the body, restore. Return `SKIP`. |
-| `DefNode` | Qualified name = `ns` (or `Object` at top level) + `.` if singleton or receiver is `self`, else `#`, + name. Visibility = `next_def_vis` if set, else `vis`; then clear `next_def_vis`. Record a method def, set `cur` and `cur_name` to it, visit children, restore. Return `SKIP`. |
+| `DefNode` | Qualified name = owner + `.` if singleton or the def has a receiver, else `#`, + name. The owner is `ns` (or `Object` at top level), except for a constant receiver: `def Name.x` belongs to `Name`. At top level, or written `::Name`, the owner is `Name` itself. Inside a namespace, `Name` is a constant lookup that needs every file: qualify the def as `ns::Name` for now and push a `singleton_receivers` record; after indexing, before the name indexes, look `Name` up in the def's nesting (Lexical resolution) and requalify the def by the class found, or by `Name` when no indexed class matches. While visiting its body, self is the owner, for `dyn_sites`, and requalifying moves the def's self-sends with it. Visibility = `next_def_vis` if set, else `vis`; then clear `next_def_vis`. Record a method def, set `cur` and `cur_name` to it, visit children, restore. Return `SKIP`. |
 | `CallNode` | Always add a method reference to the call's name. Then the special cases below. Return `DESCEND`. |
 | `SymbolNode` | Method reference to the symbol and to its setter (`:name` also reaches `name=`). With `--inflect`, also constant references to its camelized forms. |
 | `StringNode` | If the string is constant-shaped (`Foo` or `Foo::Bar`, each segment starting A–Z), a constant reference to its last segment. |
@@ -233,7 +234,7 @@ After all files are indexed, analysis runs in five steps.
    2. Build two flags arrays from `test_refs` (method names, constant names) and set `test_ref` on each def whose name appears there.
    3. For each def that is not live: `in_dead == 0` → `R_NEVER`; otherwise run a search from it over dead defs only. If it gets back to itself through another def, `R_CYCLE`; else `R_DEAD_ONLY`. Use a generation-stamped visited array so each search costs only the dead subgraph it touches.
 
-The full order in `main` is: walk and index, build name indexes, **expand name patterns**, index classes and modules, resolve and index mixins, mark, **mark namespaces** (Roots), mark uncertain, classify, then report, or build batches with `--batches`.
+The full order in `main` is: walk and index, place `def Name.x` written inside a namespace, build name indexes, **expand name patterns**, index classes and modules, resolve and index mixins, mark, **mark namespaces** (Roots), mark uncertain, classify, then report, or build batches with `--batches`.
 
 A candidate is any def with `reason ≠ R_LIVE` and `reason ≠ R_UNCERTAIN`, except `<load time>`. The “referenced only by tests” count in the report is the number of candidates with `test_ref` set; it overlaps the other three groups rather than being a fourth exclusive group.
 

@@ -1,0 +1,2 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+class:OtherClass	class	OtherClass	example.rb	5	7	unreferenced	0	1

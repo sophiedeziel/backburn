@@ -18,6 +18,7 @@ extern int32_t *CLS_BY_QUAL;         /* qualified name id -> preferred class / m
 extern int32_t *SUPER_DEF;           /* def -> resolved superclass def, or -1 */
 
 void csr_build(csr_t *c, uint32_t nkeys, size_t nitems, uint32_t (*key)(size_t, int *), size_t item_base);
+void place_singleton_defs(void); /* after indexing, before build_name_indexes */
 void build_name_indexes(void);
 const csr_t *targets_of(int is_const);
 uint32_t def_key(const def_t *d); /* name * 2 + is_const: the key a reference to d uses */

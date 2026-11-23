@@ -19,6 +19,7 @@ typedef struct {
     int32_t nest;     /* Module.nesting, innermost first, newline-separated; -1 at top level */
     int singleton;    /* inside class << self */
     uint32_t cur;     /* def that owns references; 0 = load time */
+    int32_t self_q;   /* inside def Name.x: the class self is, else -1 (self is ns) */
     int64_t cur_name; /* enclosing method name, for super */
     int vis, next_def_vis;
     int in_eval;      /* depth of class_eval strings being read */
@@ -200,8 +201,9 @@ static int yields_pattern(const pm_node_t *n, int want_const) {
 static void add_dyn(ctx_t *c, uint32_t name, uint32_t off, const pm_node_t *recv) {
     if (c->is_test || c->in_eval) return;
     dyn_t d = {c->file, line_at(c, off), S(name), -1, c->cur, 0, K_LOAD};
-    if (name >= W_SEND && name <= W_PUBLIC_METHOD && c->ns.n && (!recv || PM_NODE_TYPE_P(recv, PM_SELF_NODE))) {
-        d.self_ns = (int32_t) intern(c->ns.s, c->ns.n);
+    if (name >= W_SEND && name <= W_PUBLIC_METHOD && (c->self_q >= 0 || c->ns.n) &&
+        (!recv || PM_NODE_TYPE_P(recv, PM_SELF_NODE))) {
+        d.self_ns = c->self_q >= 0 ? c->self_q : (int32_t) intern(c->ns.s, c->ns.n);
         d.public_only = name == W_PUBLIC_SEND || name == W_TRY || name == W_TRY_BANG || name == W_PUBLIC_METHOD;
         d.self_kind = c->cur ? D.a[c->cur].kind : K_LOAD;
     }
@@ -482,19 +484,41 @@ static pm_visit_result_t visit(const pm_node_t *node, void *data) {
         c->next_def_vis = -1;
         uint32_t cur = c->cur;
         int64_t cur_name = c->cur_name;
+        int32_t self_q = c->self_q;
+        c->self_q = -1;
         if (!c->is_test && !c->in_eval) {
+            const pm_node_t *recv = n->receiver;
             sbuf q = {0};
-            if (c->ns.n) sb_put(&q, c->ns.s, c->ns.n);
-            else sb_puts(&q, "Object");
+            int32_t pending_recv = -1;
+            if (recv && (PM_NODE_TYPE_P(recv, PM_CONSTANT_READ_NODE) || PM_NODE_TYPE_P(recv, PM_CONSTANT_PATH_NODE))) {
+                /* `def Name.x` belongs to Name. At top level or written `::Name` that is Name
+                 * itself; inside a namespace it is qualified as if nested until
+                 * place_singleton_defs looks Name up. */
+                const char *rt;
+                size_t rn;
+                slice(c, recv, &rt, &rn);
+                if (c->ns.n && rt == (const char *) c->src + recv->location.start) {
+                    sb_put(&q, c->ns.s, c->ns.n), sb_put(&q, "::", 2);
+                    pending_recv = (int32_t) intern(rt, rn);
+                }
+                sb_put(&q, rt, rn);
+                c->self_q = (int32_t) intern(q.s, q.n);
+            } else if (c->ns.n) {
+                sb_put(&q, c->ns.s, c->ns.n);
+            } else {
+                sb_puts(&q, "Object");
+            }
             sb_putc(&q, sing ? '.' : '#');
             sb_put(&q, S(name), SLEN(name));
             c->cur = add_def(c, sing ? K_SMETHOD : K_METHOD, name, q.s, q.n, n->name_loc.start, end_off(node), vis);
+            if (pending_recv >= 0) PUSH(SRECV, (srecv_t){c->cur, (uint32_t) pending_recv, c->nest});
             free(q.s);
         }
         c->cur_name = name;
         pm_visit_child_nodes(node, visit, c);
         c->cur = cur;
         c->cur_name = cur_name;
+        c->self_q = self_q;
         return PM_VISIT_SKIP;
     }
     case PM_CALL_NODE:
@@ -660,6 +684,7 @@ void index_file(const char *abs, const char *rel, int kind) {
     c.cur_name = -1;
     c.next_def_vis = -1;
     c.nest = -1;
+    c.self_q = -1;
     pm_visit_node(root, visit, &c);
     rbs_scan(&c, buf, n);
     if (pm_parser_errors_size(p)) {
