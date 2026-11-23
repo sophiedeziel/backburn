@@ -26,12 +26,18 @@ Gem::Specification.new do |spec|
     "rubygems_mfa_required" => "true"
   }
 
-  # Everything needed to build and document backburn. test/, samples/, vendor/
-  # (Prism's git checkout) and the deprecated gem_usage.rb stay out.
+  # Everything needed to build and document backburn, including Prism's C
+  # sources vendored by `rake vendor:prism`. test/, samples/, vendor/ (Prism's
+  # git checkout) and the deprecated gem_usage.rb stay out.
   spec.files = Dir.chdir(__dir__) do
-    Dir["{docs,exe,lib,presets,scripts,src}/**/*", "Makefile", "README.md", "LICENSE", "rails.roots"]
-      .select { |f| File.file?(f) }
+    Dir[
+      "{docs,exe,lib,presets,scripts,src}/**/*", "Makefile", "README.md", "LICENSE", "rails.roots",
+      "ext/backburn/extconf.rb", "ext/backburn/prism/{COMMIT,LICENSE.md,Makefile}",
+      "ext/backburn/prism/{include,src}/**/*"
+    ].select { |f| File.file?(f) }
   end
   spec.bindir = "exe"
   spec.executables = ["backburn"]
+  # Builds the binary into libexec/backburn on `gem install`.
+  spec.extensions = ["ext/backburn/extconf.rb"]
 end

@@ -6,3 +6,5 @@
 /libexec/
 /pkg/
 /*.gem
+/ext/backburn/prism/
+/ext/backburn/Makefile

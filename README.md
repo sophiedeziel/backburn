@@ -37,6 +37,17 @@ The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COM
   - `haml_slim`: HAML and Slim views
   - `uncertain_send`: `send(name)` on self makes methods uncertain, not dead (scan, `explain` and JSON)
 
+### The source gem
+
+`gem install` can't count on git or a network, so the gem carries Prism's C sources, already generated at `PRISM_COMMIT`, in `ext/backburn/prism/`. When that directory exists, `make` builds Prism from it and needs neither git nor Ruby. Otherwise it fetches Prism into `vendor/prism` as above.
+
+```sh
+rake vendor:prism   # copies Prism's generated sources at PRISM_COMMIT into ext/backburn/prism (ignored by git)
+rake build          # runs vendor:prism, then builds pkg/backburn-VERSION.gem
+```
+
+On `gem install`, `ext/backburn/extconf.rb` writes a Makefile that runs this repo's `make` inside the installed gem and moves the binary to `libexec/backburn`, where the `backburn` command runs it. A C compiler and `make` are all it needs.
+
 ## Quick start
 
 In the root of a Rails app:
@@ -453,11 +464,13 @@ The original flags still work for one release and print a deprecation warning on
 | `docs/` | `technical-spec.md` (algorithm, rules, known limits), `cli-and-outputs.md` (CLI, formats, config, exit codes) |
 | `exe/backburn` | the gem's executable: a Ruby wrapper that runs the native binary installed as `libexec/backburn` |
 | `lib/backburn/version.rb` | the version, the only place it is set |
+| `ext/backburn/` | `extconf.rb`, which builds the binary on `gem install`, and `prism/`, Prism's generated sources vendored by `rake vendor:prism` (not committed) |
 
 Other top-level files:
 
 - `backburn.gemspec` packages Backburn as a gem. It reads its version from `lib/backburn/version.rb`.
-- `Makefile` builds `src/` into `build/` and fetches Prism into `vendor/prism` (not committed). It also has the `test` and `clean` targets.
+- `Makefile` builds `src/` into `build/`. It builds Prism from `ext/backburn/prism` when that exists, and otherwise fetches it into `vendor/prism` (not committed). It also has the `test` and `clean` targets.
+- `Rakefile` has `vendor:prism` and `build`, which builds the source gem into `pkg/`.
 - `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`, and `scripts/version-h.sh` generates `build/version.h` from `lib/backburn/version.rb`.
 - `rails.roots` is the spec's original roots file.
 - `samples/` holds example project roots files.
