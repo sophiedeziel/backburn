@@ -120,6 +120,14 @@ int rule_matches(rule_t *r, uint32_t i) {
         const char *cut = strrchr(q, '#');
         if (!cut) cut = strrchr(q, '.');
         if (cut) on = (size_t) (cut - q);
+    } else if (d->kind == K_CONST) {
+        /* a constant belongs to its namespace: cut at the last `::` */
+        for (size_t j = on; j >= 2; j--) {
+            if (q[j - 1] == ':' && q[j - 2] == ':') {
+                on = j - 2;
+                break;
+            }
+        }
     }
     char stackbuf[512];
     char *owner = on < sizeof stackbuf ? stackbuf : xrealloc(NULL, on + 1);
