@@ -58,6 +58,8 @@ check "class ::OtherModule::ExampleClass in GenericModule includes GenericModule
     same $C/nesting_absolute_path.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_absolute_path
 check "class ::ExampleClass in GenericModule prefers GenericModule's mixin to the top-level one" \
     same $C/nesting_absolute_class.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_absolute_class
+check "class ::ExampleClass inside GenericModule defines the top-level ExampleClass" \
+    same $C/absolute_class_path.expected.tsv $BIN scan --no-config --roots $C/absolute_class_path.roots --format tsv $C/absolute_class_path
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"

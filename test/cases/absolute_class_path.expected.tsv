@@ -1,0 +1,4 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+module:GenericModule	module	GenericModule	example.rb	1	8	unreferenced	0	1
+class:ExampleClass	class	ExampleClass	example.rb	3	5	unreferenced	0	2
+class:GenericModule::NestedClass	class	GenericModule::NestedClass	example.rb	7	7	unreferenced	0	1

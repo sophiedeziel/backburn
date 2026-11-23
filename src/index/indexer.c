@@ -264,6 +264,10 @@ static void enter_ns(ctx_t *c, const pm_node_t *node, const pm_node_t *cpath, co
     slice(c, cpath, &t, &tn);
     size_t saved = c->ns.n;
     int32_t outer_nest = c->nest;
+    /* `class ::Name` names the top-level constant, whatever namespace it is written in */
+    sbuf outer_ns = {0};
+    int absolute = t != (const char *) c->src + cpath->location.start && c->ns.n;
+    if (absolute) sb_put(&outer_ns, c->ns.s, c->ns.n), sb_trunc(&c->ns, 0);
     if (c->ns.n) sb_put(&c->ns, "::", 2);
     sb_put(&c->ns, t, tn);
     sbuf nb = {0};
@@ -303,7 +307,8 @@ static void enter_ns(ctx_t *c, const pm_node_t *node, const pm_node_t *cpath, co
     c->next_def_vis = ndv;
     c->cur = cur;
     c->cur_name = cur_name;
-    sb_trunc(&c->ns, saved);
+    sb_trunc(&c->ns, absolute ? 0 : saved);
+    if (absolute) sb_put(&c->ns, outer_ns.s, outer_ns.n), free(outer_ns.s);
     c->nest = outer_nest;
 }
 
