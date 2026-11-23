@@ -3,3 +3,6 @@
 /backburn.dSYM/
 /build/
 .backburn/
+/libexec/
+/pkg/
+/*.gem

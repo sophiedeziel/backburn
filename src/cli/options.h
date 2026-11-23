@@ -4,7 +4,7 @@
 
 #include "core/util.h"
 
-#define BACKBURN_VERSION "0.1.0"
+#include "version.h" /* BACKBURN_VERSION, generated from lib/backburn/version.rb */
 
 enum { CMD_SCAN, CMD_BATCHES, CMD_EXPLAIN, CMD_ROOTS, CMD_GEMS, CMD_INIT };
 enum { F_TEXT, F_TSV, F_JSON, F_SARIF, F_LEGACY_TSV };

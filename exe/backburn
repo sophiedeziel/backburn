@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# RubyGems binstubs `load` this file, so it has to be Ruby. It hands over to the
+# native binary, which the gem installs as libexec/backburn.
+bin = File.expand_path("../libexec/backburn", __dir__)
+abort "backburn: no native binary for #{RUBY_PLATFORM}" unless File.executable?(bin)
+exec [bin, "backburn"], *ARGV
