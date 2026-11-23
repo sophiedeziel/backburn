@@ -10,7 +10,7 @@ OBJS := $(SRCS:src/%.c=$(BUILD)/%.o)
 backburn: $(OBJS) $(PRISM)/build/libprism.a
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(PRISM)/build/libprism.a -lm
 
-$(BUILD)/%.o: src/%.c $(BUILD)/presets.h | $(PRISM)/build/libprism.a
+$(BUILD)/%.o: src/%.c $(BUILD)/presets.h $(BUILD)/version.h | $(PRISM)/build/libprism.a
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
@@ -18,6 +18,11 @@ $(BUILD)/%.o: src/%.c $(BUILD)/presets.h | $(PRISM)/build/libprism.a
 $(BUILD)/presets.h: scripts/embed-presets.sh $(wildcard presets/*.roots)
 	@mkdir -p $(BUILD)
 	sh scripts/embed-presets.sh presets/*.roots > $@
+
+# lib/backburn/version.rb is the only version source, shared with the gemspec.
+$(BUILD)/version.h: scripts/version-h.sh lib/backburn/version.rb
+	@mkdir -p $(BUILD)
+	sh scripts/version-h.sh lib/backburn/version.rb > $@.tmp && mv $@.tmp $@
 
 # Prism's C library, pinned: its C API changed in 2026 (arena allocation, visitor callbacks).
 $(PRISM)/build/libprism.a:

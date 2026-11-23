@@ -19,7 +19,7 @@ make        # fetches the pinned Prism commit into vendor/prism, builds libprism
 make test   # runs the checks in test/ (test/run.sh)
 ```
 
-The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COMMIT`) and builds its static library. It then compiles `src/` into `build/` (object files plus the generated `build/presets.h`) and links `./backburn`. Prism's C API changed in 2026, so stick to that commit unless you also update the sources. The result is one self-contained executable with the presets compiled in. Copy it anywhere on your `PATH`. `make clean` removes the build output.
+The first `make` clones Prism at the commit pinned in the `Makefile` (`PRISM_COMMIT`) and builds its static library. It then compiles `src/` into `build/` (object files plus the generated `build/presets.h` and `build/version.h`) and links `./backburn`. Prism's C API changed in 2026, so stick to that commit unless you also update the sources. The result is one self-contained executable with the presets compiled in. Copy it anywhere on your `PATH`. `make clean` removes the build output.
 
 `make test` runs `test/run.sh`, which has 11 checks:
 
@@ -451,11 +451,14 @@ The original flags still work for one release and print a deprecation warning on
 | `presets/*.roots` | the built-in presets, compiled into the binary |
 | `test/` | `run.sh` (what `make test` runs), `fixture/` (one rule per file, plus expected outputs), `cases/` (regression cases) |
 | `docs/` | `technical-spec.md` (algorithm, rules, known limits), `cli-and-outputs.md` (CLI, formats, config, exit codes) |
+| `exe/backburn` | the gem's executable: a Ruby wrapper that runs the native binary installed as `libexec/backburn` |
+| `lib/backburn/version.rb` | the version, the only place it is set |
 
 Other top-level files:
 
+- `backburn.gemspec` packages Backburn as a gem. It reads its version from `lib/backburn/version.rb`.
 - `Makefile` builds `src/` into `build/` and fetches Prism into `vendor/prism` (not committed). It also has the `test` and `clean` targets.
-- `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`.
+- `scripts/embed-presets.sh` generates `build/presets.h` from `presets/*.roots`, and `scripts/version-h.sh` generates `build/version.h` from `lib/backburn/version.rb`.
 - `rails.roots` is the spec's original roots file.
 - `samples/` holds example project roots files.
 - `gem_usage.rb` is a deprecated shim for `backburn gems`.
