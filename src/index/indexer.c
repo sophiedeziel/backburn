@@ -16,6 +16,7 @@ typedef struct {
     uint32_t file;
     int is_test;
     sbuf ns;          /* current namespace, e.g. Admin::Reports */
+    int32_t nest;     /* Module.nesting, innermost first, newline-separated; -1 at top level */
     int singleton;    /* inside class << self */
     uint32_t cur;     /* def that owns references; 0 = load time */
     int64_t cur_name; /* enclosing method name, for super */
@@ -262,15 +263,21 @@ static void enter_ns(ctx_t *c, const pm_node_t *node, const pm_node_t *cpath, co
     size_t tn;
     slice(c, cpath, &t, &tn);
     size_t saved = c->ns.n;
+    int32_t outer_nest = c->nest;
     if (c->ns.n) sb_put(&c->ns, "::", 2);
     sb_put(&c->ns, t, tn);
+    sbuf nb = {0};
+    sb_put(&nb, c->ns.s, c->ns.n);
+    if (outer_nest >= 0) sb_putc(&nb, '\n'), sb_put(&nb, S(outer_nest), SLEN(outer_nest));
+    c->nest = (int32_t) intern(nb.s, nb.n);
+    free(nb.s);
     if (!c->is_test && !c->in_eval) {
         const char *seg;
         size_t sn;
         last_segment(t, tn, &seg, &sn);
         uint32_t i = add_def(c, kind, intern(seg, sn), c->ns.s, c->ns.n, cpath->location.start, end_off(node), V_PUBLIC);
         if (kind == K_CLASS) {
-            D.a[i].outer = (int32_t) intern(c->ns.s, saved);
+            D.a[i].outer = outer_nest;
             const pm_node_t *s = super;
             if (s && PM_NODE_TYPE_P(s, PM_CALL_NODE)) s = ((const pm_call_node_t *) s)->receiver;
             if (s && (PM_NODE_TYPE_P(s, PM_CONSTANT_READ_NODE) || PM_NODE_TYPE_P(s, PM_CONSTANT_PATH_NODE))) {
@@ -297,6 +304,7 @@ static void enter_ns(ctx_t *c, const pm_node_t *node, const pm_node_t *cpath, co
     c->cur = cur;
     c->cur_name = cur_name;
     sb_trunc(&c->ns, saved);
+    c->nest = outer_nest;
 }
 
 static void camel_refs(ctx_t *c, const char *s, size_t n, uint32_t off) {
@@ -386,7 +394,7 @@ static void visit_call(ctx_t *c, const pm_node_t *node) {
                 const char *t;
                 size_t tn;
                 slice(c, a, &t, &tn);
-                PUSH(INC, (incl_t){cls, intern(t, tn), cls, -1});
+                PUSH(INC, (incl_t){cls, intern(t, tn), c->nest, -1});
             }
         }
     }
@@ -646,6 +654,7 @@ void index_file(const char *abs, const char *rel, int kind) {
     c.is_test = is_test;
     c.cur_name = -1;
     c.next_def_vis = -1;
+    c.nest = -1;
     pm_visit_node(root, visit, &c);
     rbs_scan(&c, buf, n);
     if (pm_parser_errors_size(p)) {

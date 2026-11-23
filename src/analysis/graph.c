@@ -147,25 +147,25 @@ static int32_t lookup_other(const char *s, size_t n, int64_t self) {
     return r >= 0 && (int64_t) D.a[r].qual == self ? -1 : r;
 }
 
-/* A name written inside A::B: try A::B::Name, A::Name, Name. */
-static int32_t resolve(uint32_t name, int32_t outer, int64_t self) {
+/* Ruby's constant lookup, without ancestors: Name in each scope of the nesting
+ * (Module.nesting, innermost first, newline-separated), exactly, then at the top level. */
+static int32_t resolve(uint32_t name, int32_t nest, int64_t self) {
     const char *nm = S(name);
-    if (outer >= 0 && SLEN(outer)) {
+    if (nest >= 0) {
         sbuf b = {0};
-        size_t L = SLEN(outer);
-        while (L > 0) {
+        for (const char *p = S(nest), *end = p + SLEN(nest); p < end;) {
+            const char *nl = memchr(p, '\n', (size_t) (end - p));
+            if (!nl) nl = end;
             sb_trunc(&b, 0);
-            sb_put(&b, S(outer), L);
+            sb_put(&b, p, (size_t) (nl - p));
             sb_put(&b, "::", 2);
-            sb_puts(&b, nm);
+            sb_put(&b, nm, SLEN(name));
             int32_t r = lookup_other(b.s, b.n, self);
             if (r >= 0) {
                 free(b.s);
                 return r;
             }
-            size_t k = L;
-            while (k >= 2 && !(S(outer)[k - 1] == ':' && S(outer)[k - 2] == ':')) k--;
-            L = k >= 2 ? k - 2 : 0;
+            p = nl + 1;
         }
         free(b.s);
     }
@@ -190,7 +190,7 @@ void index_classes(void) {
 }
 
 void resolve_mixins(void) {
-    for (size_t i = 0; i < INC.n; i++) INC.a[i].res = resolve(INC.a[i].mod, (int32_t) INC.a[i].outer, -1);
+    for (size_t i = 0; i < INC.n; i++) INC.a[i].res = resolve(INC.a[i].mod, INC.a[i].nest, -1);
     csr_build(&INC_BY_CLS, NN, INC.n, key_inc_cls, 0);
     csr_build(&INC_BY_RES, NN, INC.n, key_inc_res, 0);
 }

@@ -83,7 +83,7 @@ Everything is a flat array of definitions plus, on each, a list of outgoing refe
 | `file`, `line` | index into the file list, 1-based line of the name |
 | `vis` | `V_PUBLIC`, `V_PRIVATE`, `V_PROTECTED` |
 | `refs` | outgoing references: `{name id, is_const}` |
-| `super`, `outer` | classes only: superclass as written, and the namespace it was written inside (for lexical resolution) |
+| `super`, `outer` | classes only: superclass as written, and the `Module.nesting` outside the class, where Ruby looks the superclass up (for lexical resolution) |
 | `overrides` | method body calls `super` |
 | `live`, `root` | set by marking |
 | `in_live`, `in_dead` | count of incoming references from live / dead definitions, set by classification |
@@ -100,7 +100,7 @@ Two more fields on every definition:
 **Other tables:**
 
 - `test_refs`: references made from test files, kept apart; they never mark anything.
-- `includes`: one record per `include` / `prepend` / `extend` with a constant argument: `{class qual, module as written, outer namespace, resolved module def}`.
+- `includes`: one record per `include` / `prepend` / `extend` with a constant argument: `{class qual, module as written, nesting inside the class, resolved module def}`.
 - `dyn_sites`: `{file, line, what}` for every reflective call whose target can't be read, e.g. `send(<computed>)`. A send-like call on self (`send`, `__send__`, `public_send`, `try`, `try!`, `method`, `public_method`, with no receiver or `self.`) written inside a class or module also records `{self_ns, owner def, public_only, self_kind}` for the uncertain pass (Marking and classification). `self_kind` is the kind of the enclosing def (`K_METHOD` or `K_SMETHOD`), or unknown in a class body or a block outside any def.
 - `files`: relative paths, in walk order.
 
@@ -114,7 +114,7 @@ Added for metaprogramming, batches and speed:
 
 ## Indexing rules
 
-One visitor callback handles every node; anything not listed returns `PM_VISIT_DESCEND`. Visitor state (`ctx_t`): parser, file index, `is_test`, current namespace string `ns` (e.g. `Admin::Reports`), `singleton` flag, `cur` (the def that owns references, 0 = load time), `cur_name` (enclosing method name, for `super`), current default visibility `vis`, and `next_def_vis` (visibility for the next `def` only, or -1). In test files, definitions are not recorded and references go to `test_refs`.
+One visitor callback handles every node; anything not listed returns `PM_VISIT_DESCEND`. Visitor state (`ctx_t`): parser, file index, `is_test`, current namespace string `ns` (e.g. `Admin::Reports`), `nest` (the scopes of `Module.nesting`, innermost first, newline-separated and interned, or -1 at top level), `singleton` flag, `cur` (the def that owns references, 0 = load time), `cur_name` (enclosing method name, for `super`), current default visibility `vis`, and `next_def_vis` (visibility for the next `def` only, or -1). In test files, definitions are not recorded and references go to `test_refs`.
 
 | Prism node | What it does |
 | --- | --- |
@@ -129,13 +129,13 @@ One visitor callback handles every node; anything not listed returns `PM_VISIT_D
 | `ConstantWriteNode` | At load time only, outside tests: record a `K_CONST` def `ns::NAME`. |
 | `SuperNode`, `ForwardingSuperNode` | Method reference to `cur_name`, and mark the current def `overrides = 1`. |
 
-**Entering a namespace.** Take the constant path's source text, strip a leading `::`, and append it to `ns` with `::` (or use it alone at top level). Record the def with that qualified name. For classes, store `super` and `outer` (`ns` before entering): a constant or constant path is stored as its source text; a call like `ActiveRecord::Migration[7.1]` stores its receiver. Then save state, set `ns`, reset `singleton`, `vis` = public, `cur` = 0, visit the body, restore. Methods defined directly inside belong to the class, but references in the class body belong to load time.
+**Entering a namespace.** Take the constant path's source text, strip a leading `::`, and append it to `ns` with `::` (or use it alone at top level). Record the def with that qualified name. Set `nest` to that name followed by the outer `nest`: `module A; class B` has the nesting `A::B`, `A`, while `class A::B` at top level has only `A::B`. For classes, store `super` and `outer` (`nest` before entering): a constant or constant path is stored as its source text; a call like `ActiveRecord::Migration[7.1]` stores its receiver. Then save state, set `ns`, reset `singleton`, `vis` = public, `cur` = 0, visit the body, restore. Methods defined directly inside belong to the class, but references in the class body belong to load time.
 
 **Call special cases** (only `CallNode`):
 
 1. **Visibility.** A receiverless `private` / `protected` / `public` at load time: with no arguments, set `vis`; with a `def` as first argument (`private def x`), set `next_def_vis`.
 2. **Def as argument.** For any other call, each argument that is a `DefNode` adds a method reference to that def's name. `register def self.handler(...)` passes the symbol `:handler`, so the handler is used. Skip this for `private`, `protected`, `public`, `private_class_method`, `public_class_method`, `module_function`.
-3. **Mixins.** A receiverless `include` / `prepend` / `extend` inside a namespace, with constant arguments: push one `includes` record per argument.
+3. **Mixins.** A receiverless `include` / `prepend` / `extend` inside a namespace, with constant arguments: push one `includes` record per argument, with the current `nest`.
 4. **Reflection on methods:** `send`, `__send__`, `public_send`, `try`, `try!`, `method`, `public_method`, `instance_method`, `public_instance_method`, `respond_to?`, `alias_method`, `define_method`. First argument a string → method reference to it; a symbol is already handled by `SymbolNode`; anything else → record a dynamic site.
 5. **Reflection on constants:** `const_get`, `constantize`, `safe_constantize`, `const_defined?`. String or symbol first argument → constant reference (last `::` segment). `"Foo".constantize` (string receiver) → constant reference. Any other receiver or argument → dynamic site.
 
@@ -214,7 +214,7 @@ With `--public-api`, a class, module or constant without `:nodoc:` is also a roo
 - it **mixes in** `Pat`: some `includes` record with this owner as the class has a module that matches `Pat`, as written or resolved;
 - it is a **module included into a kind of `Pat`**: some `includes` record resolves to the owner and its class is a kind of `Pat` (the first three rules, applied to that class).
 
-**Lexical resolution** of a name written inside namespace `A::B`: try `A::B::Name`, then `A::Name`, then `Name`, against an index of class and module qualified names. When a class is reopened, keep the def that names a superclass. Resolve every `includes` record once, before marking; resolving inside the matching loop made a run take 3.3 s instead of 0.15 s.
+**Lexical resolution** of a name, the way Ruby looks a constant up: try `Scope::Name` for each scope of the recorded nesting, exactly and innermost first, then `Name` at the top level, against an index of class and module qualified names. A superclass is looked up in the nesting outside its class, a mixin in the nesting inside it, and a superclass written `::Base` at the top level only. Inside `module A; class B`, that tries `A::B::Name`, `A::Name`, `Name`; inside `class A::B` at top level, `A::B::Name` and `Name`, never `A::Name`. Ruby also searches the ancestors of the innermost scope; this lookup does not. When a class is reopened, keep the def that names a superclass. Resolve every `includes` record once, before marking; resolving inside the matching loop made a run take 3.3 s instead of 0.15 s.
 
 **Namespaces are live through what they hold.** After marking, a class or module is live if a live class, module or constant is nested in it (`Erb` holds live generator classes, so `Erb` is live). Methods don't count: a method is live by its name alone, which says nothing about its class. On Tentacles, letting methods count wrongly revived 12 unwired `PrintQueue` classes whose methods share names like `change` with live code.
 
