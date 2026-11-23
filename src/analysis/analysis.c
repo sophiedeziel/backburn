@@ -34,6 +34,7 @@ static int file_rank_cmp(const void *a, const void *b) {
 void analyse(void) {
     double t0 = now_ms();
     index_tree(O.root);
+    place_singleton_defs();
     build_name_indexes();
     expand_patterns();
     NREFS = 0;

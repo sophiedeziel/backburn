@@ -1,0 +1,2 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+module:GenericModule::NestedModule	module	GenericModule::NestedModule	lib/generic_module.rb	4	10	unreferenced	0	1

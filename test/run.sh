@@ -43,11 +43,11 @@ check "send(name) on self makes its class's dead methods uncertain, not dead" \
     same $C/uncertain_send.expected.tsv $BIN scan --format tsv $C/uncertain_send
 check "explain shows the send that makes a definition uncertain" \
     same $C/uncertain_send.expected-explain.txt $BIN explain 'Config::DEFAULTS' --color never $C/uncertain_send
-uncertain_ids() {
-    $BIN scan --format json "$C/uncertain_send" 2>/dev/null | ruby -rjson -e '
+uncertain_ids() { # scan arguments...
+    $BIN scan --format json "$@" 2>/dev/null | ruby -rjson -e '
       puts JSON.parse(STDIN.read)["uncertain"].map { |u| "#{u["id"]} #{u["send"]["call"]}" }' | tr '\n' ' '
 }
-check "scan json lists uncertain definitions with their send" test "$(uncertain_ids)" = \
+check "scan json lists uncertain definitions with their send" test "$(uncertain_ids "$C/uncertain_send")" = \
     "method:Dispatcher#start send method:Dispatcher#stop send method:Dispatcher#prepare send module:Config send constant:Config::DEFAULTS send method:Factory.widget send method:Exporter#csv public_send "
 check "< Superclass reaches constants defined inside the class" \
     same $C/kind_constant_owner.expected.tsv $BIN scan --no-config --roots $C/kind_constant_owner.roots --format tsv $C/kind_constant_owner
@@ -60,6 +60,12 @@ check "class ::ExampleClass in GenericModule prefers GenericModule's mixin to th
     same $C/nesting_absolute_class.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/nesting_absolute_class
 check "class ::ExampleClass inside GenericModule defines the top-level ExampleClass" \
     same $C/absolute_class_path.expected.tsv $BIN scan --no-config --roots $C/absolute_class_path.roots --format tsv $C/absolute_class_path
+check "def ExampleClass.method belongs to ExampleClass, at the top level or inside a module" \
+    same $C/singleton_receiver.expected.tsv $BIN scan --no-config --roots $C/singleton_receiver.roots --format tsv $C/singleton_receiver
+check "send(name) in def ExampleClass.dispatch makes ExampleClass's singleton methods uncertain" \
+    test "$(uncertain_ids --no-config --roots $C/singleton_receiver.roots $C/singleton_receiver)" = "method:ExampleClass.other_method send "
+check "def NestedClass.example_method in class ::OtherClass looks NestedClass up in GenericModule" \
+    same $C/singleton_receiver_absolute.expected.tsv $BIN scan --no-config --roots $C/singleton_receiver_absolute.roots --format tsv $C/singleton_receiver_absolute
 
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"
