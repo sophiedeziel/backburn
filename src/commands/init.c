@@ -67,7 +67,7 @@ int cmd_init(void) {
         if (on[o]) fprintf(f, "%s%s", n++ ? ", " : "", ORDER[o]);
     fputs("]\nroots: [.backburn.roots]      # project-specific patterns, committed\n", f);
     fputs("inflect: true\n", f);
-    fputs("# exclude: [db/migrate/**, script/**]\n", f);
+    fputs("# exclude: [tmp/**, log/**, db/migrate/**, script/**]   # replaces the default excludes\n", f);
     fputs("# tests: [spec/**]\n", f);
     fputs("# baseline: .backburn-baseline.json\n", f);
     fclose(f);

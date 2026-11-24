@@ -32,7 +32,7 @@ backburn explain Order#legacy_total   # why is this live, or why is it dead?
   presets: [rails, sidekiq, pundit]
   roots: [.backburn.roots]      # project-specific patterns, committed
   inflect: true
-  # exclude: [db/migrate/**, script/**]
+  # exclude: [tmp/**, log/**, db/migrate/**, script/**]   # replaces the default excludes
   # tests: [spec/**]
   # baseline: .backburn-baseline.json
   ```
