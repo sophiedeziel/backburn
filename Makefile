@@ -5,13 +5,13 @@ VENDORED_PRISM := ext/backburn/prism
 PRISM := $(if $(wildcard $(VENDORED_PRISM)/include/prism.h),$(VENDORED_PRISM),vendor/prism)
 BUILD := build
 CFLAGS ?= -O2 -g -std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-format-truncation
-CPPFLAGS += -D_GNU_SOURCE -D_DARWIN_C_SOURCE -Isrc -I$(BUILD) -I$(PRISM)/include -MMD -MP
+CPPFLAGS += -D_GNU_SOURCE -D_DARWIN_C_SOURCE -Isrc -I$(BUILD) -I$(PRISM)/include -MMD -MP -pthread
 
 SRCS := $(shell find src -name '*.c' | sort)
 OBJS := $(SRCS:src/%.c=$(BUILD)/%.o)
 
 backburn: $(OBJS) $(PRISM)/build/libprism.a
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(PRISM)/build/libprism.a -lm
+	$(CC) $(CFLAGS) $(LDFLAGS) -pthread -o $@ $(OBJS) $(PRISM)/build/libprism.a -lm
 
 $(BUILD)/%.o: src/%.c $(BUILD)/presets.h $(BUILD)/version.h | $(PRISM)/build/libprism.a
 	@mkdir -p $(dir $@)

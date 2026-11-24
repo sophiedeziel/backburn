@@ -1,5 +1,7 @@
 /* The Prism visitor: turns one parsed file into definitions and named references. */
 #include <ctype.h>
+#include <pthread.h>
+#include <sys/resource.h>
 
 #include "index/indexer.h"
 #include "core/intern.h"
@@ -640,63 +642,178 @@ static void rbs_scan(ctx_t *c, const char *b, size_t n) {
     c->cur = cur;
 }
 
-void index_file(const char *abs, const char *rel, int kind) {
+/* What a worker thread makes of one file, for the main thread to index. */
+typedef struct {
+    char *buf;     /* the file as Ruby: views converted; NULL when it could not be read */
     size_t n;
-    char *buf = read_file(abs, &n);
-    if (!buf) return;
-    uint32_t fi = (uint32_t) FILES.n;
-    PUSH(FILES, xstrdup(rel));
-    int is_test = any_glob(&O.tests, rel);
-    PUSH(FTEST, (uint8_t) is_test);
-    PUSH(FTEMPLATE, (uint8_t) (kind != FK_RUBY));
-    if (kind == FK_TEMPLATE) erb_to_ruby(buf, n);
+    int kind;      /* FK_RUBY or FK_TEMPLATE */
+    int view;      /* an ERB, HAML or Slim view, or a generator template */
+    int generator; /* a .rb file that turned out to be an ERB generator template */
+    pm_arena_t *arena;
+    pm_parser_t *p;
+    pm_node_t *root;
+} parsed_t;
+
+/* An extensionless file is Ruby when its shebang names ruby or rails. */
+static int ruby_shebang(const char *abs) {
+    FILE *f = fopen(abs, "rb");
+    if (!f) return 0;
+    char line[256];
+    int ok = fgets(line, sizeof line, f) && line[0] == '#' && line[1] == '!' && (strstr(line, "ruby") || strstr(line, "rails"));
+    fclose(f);
+    return ok;
+}
+
+/* Read, convert and parse one file. It touches no shared state (OPTS is only read), so
+ * worker threads run it. A file that is not Ruby after all leaves buf NULL. */
+static void parse_file(const file_job_t *f, parsed_t *out) {
+    memset(out, 0, sizeof *out);
+    int kind = f->kind;
+    if (kind == FK_SHEBANG) {
+        if (!ruby_shebang(f->abs)) return;
+        kind = FK_RUBY;
+    }
+    out->view = kind != FK_RUBY;
+    out->buf = read_file(f->abs, &out->n);
+    if (!out->buf) return;
+    if (kind == FK_TEMPLATE) erb_to_ruby(out->buf, out->n);
     if (kind == FK_HAML || kind == FK_SLIM) {
         size_t rn;
-        char *ruby = haml_to_ruby(buf, n, kind == FK_SLIM, &rn);
-        free(buf);
-        buf = ruby;
-        n = rn;
+        char *ruby = haml_to_ruby(out->buf, out->n, kind == FK_SLIM, &rn);
+        free(out->buf);
+        out->buf = ruby;
+        out->n = rn;
         kind = FK_TEMPLATE;
     }
-
-    pm_arena_t *arena = pm_arena_new();
-    pm_parser_t *p = pm_parser_new(arena, (const uint8_t *) buf, n, OPTS);
-    pm_node_t *root = pm_parse(p);
-    if (kind == FK_RUBY && pm_parser_errors_size(p) && memmem(buf, n, "<%", 2)) {
+    out->arena = pm_arena_new();
+    out->p = pm_parser_new(out->arena, (const uint8_t *) out->buf, out->n, OPTS);
+    out->root = pm_parse(out->p);
+    if (kind == FK_RUBY && pm_parser_errors_size(out->p) && memmem(out->buf, out->n, "<%", 2)) {
         /* old-style generator templates: ERB in a .rb file */
-        pm_parser_free(p);
-        pm_arena_free(arena);
+        pm_parser_free(out->p);
+        pm_arena_free(out->arena);
         kind = FK_TEMPLATE;
-        FTEMPLATE.a[fi] = 1;
-        is_test = FTEST.a[fi] = 0; /* a generator template, even when named *_spec.rb */
-        erb_to_ruby(buf, n);
-        arena = pm_arena_new();
-        p = pm_parser_new(arena, (const uint8_t *) buf, n, OPTS);
-        root = pm_parse(p);
+        out->generator = out->view = 1;
+        erb_to_ruby(out->buf, out->n);
+        out->arena = pm_arena_new();
+        out->p = pm_parser_new(out->arena, (const uint8_t *) out->buf, out->n, OPTS);
+        out->root = pm_parse(out->p);
     }
+    out->kind = kind;
+}
+
+/* Index one parsed file, then free it. The main thread runs this in walk order, so names
+ * are interned and definitions numbered exactly as one thread would. */
+static void index_parsed(const file_job_t *f, parsed_t *pf) {
+    if (!pf->buf) return;
+    uint32_t fi = (uint32_t) FILES.n;
+    PUSH(FILES, xstrdup(f->rel));
+    /* a generator template is no test, even when named *_spec.rb */
+    int is_test = !pf->generator && any_glob(&O.tests, f->rel);
+    PUSH(FTEST, (uint8_t) is_test);
+    PUSH(FTEMPLATE, (uint8_t) pf->view);
     ctx_t c;
     memset(&c, 0, sizeof c);
-    c.p = p;
-    c.src = (const uint8_t *) buf;
-    c.srclen = n;
+    c.p = pf->p;
+    c.src = (const uint8_t *) pf->buf;
+    c.srclen = pf->n;
     c.file = fi;
     c.is_test = is_test;
     c.cur_name = -1;
     c.next_def_vis = -1;
     c.nest = -1;
     c.self_q = -1;
-    pm_visit_node(root, visit, &c);
-    rbs_scan(&c, buf, n);
-    if (pm_parser_errors_size(p)) {
-        if (kind == FK_TEMPLATE) {
+    pm_visit_node(pf->root, visit, &c);
+    rbs_scan(&c, pf->buf, pf->n);
+    if (pm_parser_errors_size(pf->p)) {
+        if (pf->kind == FK_TEMPLATE) {
             TEMPLATE_ERRORS++;
         } else {
-            const pm_diagnostic_t *e = pm_parser_errors_first(p);
+            const pm_diagnostic_t *e = pm_parser_errors_first(pf->p);
             PUSH(PERR, (perr_t){fi, line_at(&c, pm_diagnostic_location(e).start), xstrdup(pm_diagnostic_message(e))});
         }
     }
     free(c.ns.s);
-    pm_parser_free(p);
-    pm_arena_free(arena);
-    free(buf);
+    pm_parser_free(pf->p);
+    pm_arena_free(pf->arena);
+    free(pf->buf);
+}
+
+/* Workers take files in order and parse them; the main thread indexes file i once it is
+ * ready. Workers stay at most window files ahead of it, which bounds memory. */
+typedef struct {
+    const file_job_t *files;
+    parsed_t *out;
+    uint8_t *ready;
+    size_t n, next, done, window;
+    pthread_mutex_t mu;
+    pthread_cond_t ready_cv, room_cv;
+} pipeline_t;
+
+static void *parse_worker(void *arg) {
+    pipeline_t *pl = arg;
+    for (;;) {
+        pthread_mutex_lock(&pl->mu);
+        while (pl->next < pl->n && pl->next >= pl->done + pl->window) pthread_cond_wait(&pl->room_cv, &pl->mu);
+        if (pl->next >= pl->n) {
+            pthread_mutex_unlock(&pl->mu);
+            return NULL;
+        }
+        size_t i = pl->next++;
+        pthread_mutex_unlock(&pl->mu);
+        parse_file(&pl->files[i], &pl->out[i]);
+        pthread_mutex_lock(&pl->mu);
+        pl->ready[i] = 1;
+        pthread_cond_signal(&pl->ready_cv); /* only the main thread waits on it */
+        pthread_mutex_unlock(&pl->mu);
+    }
+}
+
+/* Worker threads get the main thread's stack size (its limit, or 8 MiB when that is lower or
+ * unlimited). Their default is far smaller (512 KiB on macOS, 128 KiB on musl), and Prism
+ * recurses as deep as the code nests: a file that parses on the main thread would crash a worker. */
+static size_t worker_stack_size(void) {
+    struct rlimit rl;
+    size_t want = 8u << 20;
+    if (!getrlimit(RLIMIT_STACK, &rl) && rl.rlim_cur != RLIM_INFINITY && rl.rlim_cur > want) want = (size_t) rl.rlim_cur;
+    return want;
+}
+
+void index_files(const file_job_t *files, size_t n, int jobs) {
+    pipeline_t pl = {.files = files, .n = n, .window = (size_t) (jobs > 1 ? jobs : 1) * 8};
+    pthread_mutex_init(&pl.mu, NULL);
+    pthread_cond_init(&pl.ready_cv, NULL);
+    pthread_cond_init(&pl.room_cv, NULL);
+    pl.out = xcalloc(n + 1, sizeof *pl.out);
+    pl.ready = xcalloc(n + 1, 1);
+    pthread_t *threads = xcalloc((size_t) (jobs > 1 ? jobs : 1), sizeof *threads);
+    int started = 0;
+    if (jobs > 1 && n > 1) {
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, worker_stack_size());
+        while (started < jobs && !pthread_create(&threads[started], &attr, parse_worker, &pl)) started++;
+        pthread_attr_destroy(&attr);
+    }
+    if (!started) { /* one job, one file, or no thread could start */
+        for (size_t i = 0; i < n; i++) parse_file(&files[i], &pl.out[i]), index_parsed(&files[i], &pl.out[i]);
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            pthread_mutex_lock(&pl.mu);
+            while (!pl.ready[i]) pthread_cond_wait(&pl.ready_cv, &pl.mu);
+            pthread_mutex_unlock(&pl.mu);
+            index_parsed(&files[i], &pl.out[i]);
+            pthread_mutex_lock(&pl.mu);
+            pl.done = i + 1;
+            pthread_cond_broadcast(&pl.room_cv);
+            pthread_mutex_unlock(&pl.mu);
+        }
+        for (int k = 0; k < started; k++) pthread_join(threads[k], NULL);
+    }
+    pthread_cond_destroy(&pl.room_cv);
+    pthread_cond_destroy(&pl.ready_cv);
+    pthread_mutex_destroy(&pl.mu);
+    free(threads);
+    free(pl.ready);
+    free(pl.out);
 }

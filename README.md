@@ -145,6 +145,7 @@ Global options:
 | `--inflect` | `:line_items` also reaches `LineItem` and `LineItems` |
 | `--exclude GLOB` | skip matching paths (repeatable; default `vendor/**`, `node_modules/**`, `tmp/**`, `log/**`, `coverage/**`) |
 | `--tests GLOB` | what counts as a test file (repeatable, replaces the default) |
+| `--jobs N` | read and parse files on N threads (default: one per CPU); the report is the same for any N |
 | `--format FMT` | `text`, `tsv`, `json`, `sarif` |
 | `--output FILE` | write the report to a file |
 | `--color WHEN` | `auto`, `always`, `never` |

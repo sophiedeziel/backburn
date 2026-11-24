@@ -14,7 +14,7 @@ enum { TR_INCLUDE, TR_EXCLUDE, TR_ONLY };
 typedef struct {
     int cmd, format, quiet, color, inflect, public_api;
     int all_paths, unused_only, untested, force, write_baseline, no_config, legacy_batches;
-    int max_lines, only_mask, test_refs, fail_on;
+    int max_lines, only_mask, test_refs, fail_on, jobs;
     int set_inflect, set_public_api, set_format, set_fail_on;
     const char *output, *config, *baseline, *gem_src, *root, *explain_name, *color_when;
     strvec presets, roots, exclude, tests;

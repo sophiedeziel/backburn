@@ -1,6 +1,10 @@
 /* Memory, growable vectors, string buffers and small file helpers. */
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "core/util.h"
 
@@ -92,17 +96,29 @@ double now_ms(void) {
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 
+/* The whole file, NUL-terminated, in one read when fstat gives its size. */
 char *read_file(const char *path, size_t *len) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
-    sbuf b = {0};
-    char tmp[65536];
-    size_t k;
-    while ((k = fread(tmp, 1, sizeof tmp, f)) > 0) sb_put(&b, tmp, k);
-    fclose(f);
-    if (!b.s) sb_grow(&b, 0), b.s[0] = 0;
-    *len = b.n;
-    return b.s;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return NULL;
+    struct stat st;
+    size_t cap = !fstat(fd, &st) && S_ISREG(st.st_mode) && st.st_size > 0 ? (size_t) st.st_size : 65536, n = 0;
+    char *b = xrealloc(NULL, cap + 1);
+    for (;;) {
+        char probe; /* at the expected size: probe for more before growing */
+        char *at = n < cap ? b + n : &probe;
+        ssize_t k = read(fd, at, n < cap ? cap - n : 1);
+        if (k < 0 && errno == EINTR) continue;
+        if (k <= 0) break;
+        if (at == &probe) { /* the file grew, or fstat gave no size */
+            b = xrealloc(b, (cap *= 2) + 1);
+            b[n] = probe;
+        }
+        n += (size_t) k;
+    }
+    close(fd);
+    b[n] = 0;
+    *len = n;
+    return b;
 }
 
 /* Single-quote a string for /bin/sh. */

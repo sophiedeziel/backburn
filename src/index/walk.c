@@ -1,6 +1,7 @@
 /* The file walk: which files are read, and the path globs that choose them. */
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "index/walk.h"
 #include "core/glob.h"
@@ -32,21 +33,17 @@ int any_glob(const strvec *gs, const char *path) {
     return 0;
 }
 
-static int file_kind(const char *abs, const char *name) {
+/* The kind a file's name gives it. A file with no extension is FK_SHEBANG: a worker reads
+ * its first line, so the walk opens no files. */
+static int kind_of_name(const char *name) {
     if (has_suffix(name, ".rb") || has_suffix(name, ".rake") || !strcmp(name, "Rakefile")) return FK_RUBY;
     if (has_suffix(name, ".erb") || has_suffix(name, ".tt")) return FK_TEMPLATE;
     if (has_suffix(name, ".haml")) return FK_HAML;
     if (has_suffix(name, ".slim")) return FK_SLIM;
-    if (!strchr(name, '.')) {
-        FILE *f = fopen(abs, "rb");
-        if (!f) return FK_NONE;
-        char line[256];
-        int ok = fgets(line, sizeof line, f) && line[0] == '#' && line[1] == '!' && (strstr(line, "ruby") || strstr(line, "rails"));
-        fclose(f);
-        return ok ? FK_RUBY : FK_NONE;
-    }
-    return FK_NONE;
+    return strchr(name, '.') ? FK_NONE : FK_SHEBANG;
 }
+
+static VEC(file_job_t) TODO; /* the files to index, in walk order */
 
 /* (dev, inode) set so symlinked directories are walked once. */
 typedef struct { uint64_t dev, ino; uint8_t used; } dirkey_t;
@@ -81,42 +78,58 @@ static int dirset_add(dev_t dev, ino_t ino) {
     return 1;
 }
 
+typedef struct {
+    char *name;
+    unsigned char type; /* d_type: DT_DIR and DT_REG save a stat */
+} entry_t;
+
+static int entry_cmp(const void *a, const void *b) {
+    return strcmp(((const entry_t *) a)->name, ((const entry_t *) b)->name);
+}
+
 static void walk(sbuf *abs, sbuf *rel) {
     DIR *d = opendir(abs->s);
     if (!d) return;
-    strvec names = {0};
+    VEC(entry_t) names = {0};
     struct dirent *e;
     while ((e = readdir(d)))
-        if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) PUSH(names, xstrdup(e->d_name));
+        if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) PUSH(names, ((entry_t){xstrdup(e->d_name), e->d_type}));
     closedir(d);
-    qsort(names.a, names.n, sizeof *names.a, cmp_cstr);
+    qsort(names.a, names.n, sizeof *names.a, entry_cmp);
     size_t an = abs->n, rn = rel->n;
     for (size_t i = 0; i < names.n; i++) {
-        const char *nm = names.a[i];
+        const char *nm = names.a[i].name;
         sb_trunc(abs, an);
         sb_putc(abs, '/');
         sb_puts(abs, nm);
         sb_trunc(rel, rn);
         if (rn) sb_putc(rel, '/');
         sb_puts(rel, nm);
+        /* symlinks and file systems that leave d_type unknown need a stat to tell */
+        int is_dir = names.a[i].type == DT_DIR, is_reg = names.a[i].type == DT_REG, have_st = 0;
         struct stat st;
-        if (stat(abs->s, &st)) continue;
-        if (S_ISDIR(st.st_mode)) {
+        if (!is_dir && !is_reg) {
+            if (stat(abs->s, &st)) continue;
+            have_st = 1;
+            is_dir = S_ISDIR(st.st_mode);
+            is_reg = S_ISREG(st.st_mode);
+        }
+        if (is_dir) {
             if (!strcmp(nm, ".git") || !strcmp(nm, ".bundle") || !strcmp(nm, ".backburn")) continue;
             sb_putc(rel, '/');
             int skip = any_glob(&O.exclude, rel->s);
             sb_trunc(rel, rel->n - 1);
-            if (skip || !dirset_add(st.st_dev, st.st_ino)) continue;
+            if (skip || (!have_st && stat(abs->s, &st)) || !dirset_add(st.st_dev, st.st_ino)) continue;
             walk(abs, rel);
-        } else if (S_ISREG(st.st_mode)) {
-            if (any_glob(&O.exclude, rel->s)) continue;
-            int k = file_kind(abs->s, nm);
-            if (k) index_file(abs->s, rel->s, k);
+        } else if (is_reg) {
+            int k = kind_of_name(nm);
+            if (!k || any_glob(&O.exclude, rel->s)) continue;
+            PUSH(TODO, ((file_job_t){xstrdup(abs->s), xstrdup(rel->s), k}));
         }
     }
     sb_trunc(abs, an);
     sb_trunc(rel, rn);
-    for (size_t i = 0; i < names.n; i++) free(names.a[i]);
+    for (size_t i = 0; i < names.n; i++) free(names.a[i].name);
     free(names.a);
 }
 
@@ -141,4 +154,10 @@ void index_tree(const char *root) {
     walk(&abs, &rel);
     free(abs.s);
     free(rel.s);
+    long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+    index_files(TODO.a, TODO.n, O.jobs > 0 ? O.jobs : cpus > 0 ? (int) cpus : 1);
+    for (size_t i = 0; i < TODO.n; i++) free(TODO.a[i].abs), free(TODO.a[i].rel);
+    free(TODO.a);
+    TODO.a = NULL;
+    TODO.n = TODO.cap = 0;
 }

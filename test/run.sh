@@ -71,5 +71,19 @@ check "def NestedClass.example_method in class ::OtherClass looks NestedClass up
 check "kind rules see modules mixed into a superclass" \
     same $C/superclass_mixin.expected.tsv $BIN scan --no-config --preset sidekiq --format tsv $C/superclass_mixin
 
+# Files are parsed on worker threads (--jobs): the report must not depend on how many.
+same_for_jobs() { # scan arguments...: one job and four must write the same report, and both succeed
+    one=$($BIN scan --no-config --format tsv --jobs 1 "$@" 2>&1) && four=$($BIN scan --no-config --format tsv --jobs 4 "$@" 2>&1) &&
+        test "$one" = "$four"
+}
+DEEP=$(mktemp -d "${TMPDIR:-/tmp}/backburn-deep.XXXXXX")
+trap 'rm -rf "$DEEP"' EXIT
+# nested deeper than a thread's default stack holds (512 KiB on macOS, 128 KiB on musl);
+# two files, since one file is parsed on the main thread
+ruby -e 'n = 4000; puts "h = " + "{a: " * n + "1" + "}" * n' > "$DEEP/deep.rb"
+cp "$DEEP/deep.rb" "$DEEP/deeper.rb"
+check "one job and four write the same report" same_for_jobs --roots rails.roots $FX
+check "a file nested 4000 deep parses on a worker thread as it does on the main one" same_for_jobs "$DEEP"
+
 if [ "$failed" -ne 0 ]; then echo "$failed check(s) failed"; exit 1; fi
 echo "all checks passed"
