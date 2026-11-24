@@ -1,0 +1,5 @@
+id	kind	name	file	line	end_line	reason	tests	batch
+method:Report#section	method	Report#section	lib/report.rb	10	10	unreferenced	0	1
+method:Report#cell_html	method	Report#cell_html	lib/report.rb	12	12	unreferenced	0	2
+method:Report#unused_helper	method	Report#unused_helper	lib/report.rb	14	14	unreferenced	0	3
+class:Exporters::ExportHelper	class	Exporters::ExportHelper	lib/report.rb	19	19	unreferenced	0	4

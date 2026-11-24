@@ -13,9 +13,14 @@ static int failures;
 static void check(const char *pat, const char *s) {
     glob_pat g;
     glob_compile(&g, pat);
-    int want = !fnmatch(pat, s, 0), got = glob_match(&g, s, strlen(s));
+    size_t n = strlen(s);
+    int want = !fnmatch(pat, s, 0), got = glob_match(&g, s, n);
     if (want != got && failures++ < 20)
         fprintf(stderr, "glob_match(\"%s\", \"%s\") = %d, fnmatch says %d\n", pat, s, got, want);
+    /* callers narrow candidates by head and tail, so every match must start and end with them */
+    if (want && (n < g.head + g.tail || memcmp(s, pat, g.head) || memcmp(s + n - g.tail, pat + g.len - g.tail, g.tail)) &&
+        failures++ < 20)
+        fprintf(stderr, "\"%s\" matches \"%s\" but not its head (%zu) or tail (%zu)\n", s, pat, g.head, g.tail);
 }
 
 static uint64_t state = 0x9e3779b97f4a7c15u; /* fixed seed: the same cases on every run */

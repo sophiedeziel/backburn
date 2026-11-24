@@ -3,8 +3,9 @@
  * Backburn never calls setlocale, so fnmatch runs in the C locale and compares
  * bytes: `*` matches any run of bytes (also `/`, `::` and a leading `.`), `?`
  * one byte, and `\x` a literal x. glob_match does the same in a byte loop, after
- * cheap checks on the pattern's literal head and tail. Patterns with brackets,
- * or ending in a lone backslash, go to fnmatch itself. */
+ * cheap checks on the literal bytes every match must hold: the pattern's head, its
+ * tail and its longest run in between. Patterns with brackets, or ending in a lone
+ * backslash, go to fnmatch itself. */
 #ifndef BACKBURN_CORE_GLOB_H
 #define BACKBURN_CORE_GLOB_H
 
@@ -14,8 +15,10 @@
 typedef struct {
     const char *pat; /* as written, NUL-terminated; not owned */
     size_t len;
-    size_t head;     /* literal bytes before the first wildcard or escape */
-    size_t tail;     /* literal bytes after the last `*`, or 0 when they hold `?` or `\` */
+    size_t head;     /* literal bytes before the first wildcard or escape: every match starts with them */
+    size_t tail;     /* literal bytes after the last `*`: every match ends with them (0: unknown) */
+    const char *mid; /* longest literal run between the first and last `*`, midn bytes long */
+    size_t midn;     /* (0: none); every match holds it between its head and its tail */
     uint8_t exact;   /* no wildcard or escape: plain equality */
     uint8_t star;    /* has a `*` */
     uint8_t libc;    /* brackets or a trailing backslash: ask fnmatch */
