@@ -70,7 +70,7 @@ The roots-file grammar stays as it is today (`Pattern`, `public Pattern`, `< Sup
 presets: [rails, graphql]
 roots: [.backburn.roots]      # project-specific patterns, committed
 inflect: true
-exclude: [db/migrate/**, script/**]
+exclude: [tmp/**, log/**, db/migrate/**, script/**]   # replaces the default excludes
 tests: [spec/**]
 baseline: .backburn-baseline.json
 ```
