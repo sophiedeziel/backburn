@@ -32,6 +32,7 @@ static const char USAGE[] =
     "  --inflect         :line_items also reaches LineItem and LineItems\n"
     "  --exclude GLOB    skip matching paths (repeatable; default vendor/**, node_modules/**, tmp/**, log/**, coverage/**)\n"
     "  --tests GLOB      what counts as a test file (repeatable, replaces the default)\n"
+    "  --jobs N          read and parse files on N threads (default: one per CPU)\n"
     "  --format FMT      text, tsv, json, sarif\n"
     "  --output FILE     write the report to a file\n"
     "  --color WHEN      auto, always, never\n"
@@ -172,6 +173,12 @@ void parse_args(int argc, char **argv) {
             long n = strtol(v, &end, 10);
             if (*end || n <= 0) usage_error("--max-lines takes a positive number");
             O.max_lines = (int) n;
+        } else if (FLAG("--jobs")) {
+            const char *v = VALUE();
+            char *end;
+            long n = strtol(v, &end, 10);
+            if (*end || n <= 0 || n > 1024) usage_error("--jobs takes a number from 1 to 1024");
+            O.jobs = (int) n;
         } else if (FLAG("--untested")) {
             O.untested = 1;
         } else if (FLAG("--all-paths")) {

@@ -54,6 +54,7 @@ Every command takes these. Command-line options win over the config file, which 
 | `--inflect` | off | `:line_items` also reaches `LineItem` and `LineItems` |
 | `--exclude GLOB` | `vendor/**`, `node_modules/**`, `tmp/**`, `log/**`, `coverage/**` | skip matching paths; repeatable |
 | `--tests GLOB` | `test/**`, `spec/**`, `**/*_test.rb`, `**/*_spec.rb` | what counts as a test file; repeatable, replaces the default |
+| `--jobs N` | one per CPU | read and parse files on N threads (1 to 1024); one main thread indexes them in walk order, so the report is the same for any N |
 | `--format FMT` | `text` | `text`, `tsv`, `json`, `sarif` |
 | `--output FILE` | stdout | write the report to a file |
 | `--color WHEN` | `auto` | `auto`, `always`, `never` |
